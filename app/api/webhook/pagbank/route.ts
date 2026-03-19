@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { isPagBankPaymentConfirmed, PagBankWebhookEvent } from '@/lib/pagbank'
+import { confirmReservation, getReservationById } from '@/lib/google-sheets'
+import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
+import { sendConfirmationEmail } from '@/lib/email'
+
+export async function POST(req: NextRequest) {
+  try {
+    const event: PagBankWebhookEvent = await req.json()
+
+    if (!isPagBankPaymentConfirmed(event)) {
+      return NextResponse.json({ received: true })
+    }
+
+    const reservation_id = event?.order?.reference_id
+    const gateway_tx_id = event.order.id
+
+    if (!reservation_id) {
+      return NextResponse.json({ received: true, note: 'missing reservation reference' })
+    }
+
+    // Check if already confirmed (idempotent)
+    const existing = await getReservationById(reservation_id)
+    if (existing?.reservation.status === 'CONFIRMADO') {
+      return NextResponse.json({ received: true, note: 'already confirmed' })
+    }
+
+    const confirmed = await confirmReservation({
+      reservation_id,
+      gateway: 'pagbank',
+      gateway_tx_id,
+    })
+
+    if (!confirmed) {
+      console.error('[webhook/pagbank] Reservation not found:', reservation_id)
+      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+    }
+
+    await Promise.all([
+      createConfirmedCalendarEvent({
+        slot_datetime: confirmed.slot_datetime,
+        cliente_nome: confirmed.cliente_nome,
+        addons: JSON.parse(confirmed.addons || '[]'),
+      }),
+      sendConfirmationEmail(confirmed),
+    ])
+
+    console.log('[webhook/pagbank] Confirmed:', reservation_id)
+    return NextResponse.json({ received: true })
+  } catch (err) {
+    console.error('[webhook/pagbank]', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
