@@ -97,7 +97,9 @@ cp .env.example .env.local
    ```
 5. Para testes, use `PAGBANK_ENV=sandbox`
 
-### 6. Resend (E-mail)
+### 6. Resend (E-mail) — opcional
+
+Se você **não** configurar `RESEND_API_KEY` e `EMAIL_FROM`, o app **não envia e-mail**; o cliente recebe o **comprovante na tela do checkout** (copiar texto, imprimir ou salvar em PDF).
 
 1. Crie conta em [resend.com](https://resend.com) (gratuito até 3k emails/mês)
 2. Adicione e verifique seu domínio

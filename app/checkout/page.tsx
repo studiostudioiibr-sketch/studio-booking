@@ -25,6 +25,31 @@ interface BookingSession {
   addons: string[]
 }
 
+const ADDON_LABELS: Record<string, string> = {
+  makeup: 'Maquiador',
+  stylist: 'Figurinista',
+}
+
+function buildVoucherText(b: BookingSession): string {
+  const addonLine =
+    b.addons?.length > 0
+      ? b.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')
+      : 'Nenhum'
+  return [
+    'Studio II — Comprovante de reserva',
+    `ID: ${b.reservation_id}`,
+    `Nome: ${b.cliente_nome}`,
+    `E-mail: ${b.cliente_email}`,
+    `Data e horário: ${b.slot_label}`,
+    'Endereço: Rua Miranda Valverde, 123 — Botafogo, Rio de Janeiro',
+    `Total: ${formatCurrency(b.total_cents)}`,
+    `Adicionais: ${addonLine}`,
+    '',
+    'Guarde este comprovante (captura de tela, cópia ou salvar como PDF ao imprimir).',
+    'Dúvidas: WhatsApp (21) 95902-3665 · @studioiibr',
+  ].join('\n')
+}
+
 // ─── Timer Hook ───────────────────────────────────────────────────────────────
 
 function useCountdown(expiresAt: string | null) {
@@ -302,6 +327,7 @@ export default function CheckoutPage() {
   const [booking, setBooking] = useState<BookingSession | null>(null)
   const [gateway, setGateway] = useState<'pix' | 'card'>('pix')
   const [confirmed, setConfirmed] = useState(false)
+  const [voucherCopied, setVoucherCopied] = useState(false)
 
   const secondsLeft = useCountdown(booking?.expires_at ?? null)
   const isExpired = secondsLeft === 0 && booking !== null
@@ -344,32 +370,95 @@ export default function CheckoutPage() {
 
   // ── Confirmed screen ────────────────────────────────────────────────────────
   if (confirmed) {
+    const handleCopyVoucher = async () => {
+      try {
+        await navigator.clipboard.writeText(buildVoucherText(booking))
+        setVoucherCopied(true)
+        setTimeout(() => setVoucherCopied(false), 3000)
+      } catch {
+        // ignore
+      }
+    }
+
     return (
-      <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6 text-center">
-        <div className="max-w-sm mx-auto animate-fade-up">
-          <div className="w-16 h-16 bg-ink flex items-center justify-center mx-auto mb-8">
+      <div className="min-h-screen bg-paper flex flex-col items-center justify-center px-6 py-12 text-center">
+        <div className="max-w-md w-full mx-auto animate-fade-up">
+          <div className="w-16 h-16 bg-ink flex items-center justify-center mx-auto mb-6">
             <span className="text-paper text-2xl">✓</span>
           </div>
-          <h1 className="font-display text-4xl mb-4">
+          <h1 className="font-display text-4xl mb-3">
             Sessão<br /><em>confirmada.</em>
           </h1>
-          <p className="font-body text-muted mb-2">
-            Enviamos a confirmação para
+          <p className="font-body text-sm text-muted mb-6 max-w-sm mx-auto">
+            Guarde o comprovante abaixo: copie o texto, tire um print ou use <strong className="text-ink font-medium">Imprimir</strong> e salve em PDF no celular ou computador.
           </p>
-          <p className="font-body font-medium text-ink mb-8">{booking.cliente_email}</p>
-          <div className="border border-ink/10 p-5 text-left mb-8">
-            <p className="text-xs font-body tracking-widest uppercase text-muted mb-3">Detalhes</p>
-            <p className="font-body text-sm text-ink">{booking.slot_label}</p>
-            <p className="font-body text-sm text-muted mt-1">
-              Rua Miranda Valverde, 123 — Botafogo
-            </p>
+
+          <div className="border border-ink/10 p-6 text-left mb-6 bg-paper print:border-ink print:shadow-none">
+            <p className="text-xs font-body tracking-widest uppercase text-muted mb-4">Comprovante</p>
+            <dl className="space-y-3 font-body text-sm text-ink">
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-muted">Nome</dt>
+                <dd>{booking.cliente_nome}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-muted">E-mail</dt>
+                <dd className="break-all">{booking.cliente_email}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-muted">Data e horário</dt>
+                <dd>{booking.slot_label}</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-muted">Local</dt>
+                <dd>Rua Miranda Valverde, 123 — Botafogo, Rio de Janeiro</dd>
+              </div>
+              <div>
+                <dt className="text-[10px] uppercase tracking-widest text-muted">Total</dt>
+                <dd className="font-medium">{formatCurrency(booking.total_cents)}</dd>
+              </div>
+              {booking.addons?.length > 0 && (
+                <div>
+                  <dt className="text-[10px] uppercase tracking-widest text-muted">Adicionais</dt>
+                  <dd>{booking.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')}</dd>
+                </div>
+              )}
+              {booking.addons?.includes('makeup') && (
+                <p className="text-xs text-accent border-l-2 border-accent pl-3 py-1">
+                  Com maquiador: chegue com <strong>30 minutos de antecedência</strong>.
+                </p>
+              )}
+              <div className="pt-2 border-t border-ink/10">
+                <dt className="text-[10px] uppercase tracking-widest text-muted">ID da reserva</dt>
+                <dd className="font-mono text-xs break-all text-muted">{booking.reservation_id}</dd>
+              </div>
+            </dl>
           </div>
-          <a
-            href="/"
-            className="text-xs font-body tracking-widest uppercase text-muted hover:text-ink transition-colors"
-          >
-            ← Voltar ao início
-          </a>
+
+          <div className="no-print flex flex-col gap-3 max-w-md mx-auto">
+            <button
+              type="button"
+              onClick={handleCopyVoucher}
+              className={`
+                w-full border py-3.5 font-body text-sm font-medium tracking-widest uppercase transition-all
+                ${voucherCopied ? 'border-accent text-accent bg-accent/5' : 'border-ink/20 text-ink hover:border-ink'}
+              `}
+            >
+              {voucherCopied ? '✓ Comprovante copiado!' : 'Copiar comprovante (texto)'}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="w-full bg-ink text-paper py-3.5 font-body text-sm font-medium tracking-widest uppercase hover:bg-ink/90 transition-all"
+            >
+              Imprimir / salvar PDF
+            </button>
+            <a
+              href="/"
+              className="text-xs font-body tracking-widest uppercase text-muted hover:text-ink transition-colors py-2"
+            >
+              ← Voltar ao início
+            </a>
+          </div>
         </div>
       </div>
     )

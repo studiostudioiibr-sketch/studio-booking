@@ -6,6 +6,11 @@ import { toZonedTime } from 'date-fns-tz'
 
 const TZ = 'America/Sao_Paulo'
 
+/** E-mail é opcional: sem Resend configurado, a confirmação fica na tela do checkout. */
+export function isEmailEnabled(): boolean {
+  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim())
+}
+
 function getResendClient() {
   if (!process.env.RESEND_API_KEY) {
     throw new Error('RESEND_API_KEY is not configured')
@@ -25,20 +30,26 @@ function formatSlotDate(isoString: string) {
 // ─── Confirmation email ───────────────────────────────────────────────────────
 
 export async function sendConfirmationEmail(reservation: Reservation): Promise<void> {
-  const resend = getResendClient()
-  const addons: string[] = JSON.parse(reservation.addons || '[]')
-  const slotLabel = formatSlotDate(reservation.slot_datetime)
+  if (!isEmailEnabled()) {
+    console.log('[email] Skipping confirmation email (Resend not configured)')
+    return
+  }
 
-  const addonLines = addons.length > 0
-    ? `<p style="margin:0 0 8px"><strong>Adicionais:</strong> ${addons.join(', ')}</p>`
-    : ''
+  try {
+    const resend = getResendClient()
+    const addons: string[] = JSON.parse(reservation.addons || '[]')
+    const slotLabel = formatSlotDate(reservation.slot_datetime)
 
-  const hasArriveEarly = addons.includes('makeup')
-  const earlyNote = hasArriveEarly
-    ? `<p style="margin:16px 0 0;padding:12px;background:#FEF9EE;border-left:3px solid #C8A96E;font-size:13px;color:#7A6030">⚠️ Você adicionou maquiador — chegue com <strong>30 minutos de antecedência</strong>.</p>`
-    : ''
+    const addonLines = addons.length > 0
+      ? `<p style="margin:0 0 8px"><strong>Adicionais:</strong> ${addons.join(', ')}</p>`
+      : ''
 
-  const html = `
+    const hasArriveEarly = addons.includes('makeup')
+    const earlyNote = hasArriveEarly
+      ? `<p style="margin:16px 0 0;padding:12px;background:#FEF9EE;border-left:3px solid #C8A96E;font-size:13px;color:#7A6030">⚠️ Você adicionou maquiador — chegue com <strong>30 minutos de antecedência</strong>.</p>`
+      : ''
+
+    const html = `
 <!DOCTYPE html>
 <html lang="pt-br">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -105,12 +116,15 @@ export async function sendConfirmationEmail(reservation: Reservation): Promise<v
 </body>
 </html>`
 
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM!,
-    to: reservation.cliente_email,
-    subject: `✅ Sessão confirmada — Studio II — ${slotLabel}`,
-    html,
-  })
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM!,
+      to: reservation.cliente_email,
+      subject: `✅ Sessão confirmada — Studio II — ${slotLabel}`,
+      html,
+    })
+  } catch (err) {
+    console.error('[email] Failed to send confirmation email', err)
+  }
 }
 
 // ─── Expiration reminder (optional) ──────────────────────────────────────────
@@ -120,15 +134,21 @@ export async function sendExpirationWarningEmail(params: {
   cliente_nome: string
   minutes_left: number
 }): Promise<void> {
-  const resend = getResendClient()
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM!,
-    to: params.cliente_email,
-    subject: `⏰ Você tem ${params.minutes_left} min para finalizar sua reserva — Studio II`,
-    html: `
+  if (!isEmailEnabled()) return
+
+  try {
+    const resend = getResendClient()
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM!,
+      to: params.cliente_email,
+      subject: `⏰ Você tem ${params.minutes_left} min para finalizar sua reserva — Studio II`,
+      html: `
       <p>Olá, ${params.cliente_nome}!</p>
       <p>Sua pré-reserva expira em <strong>${params.minutes_left} minutos</strong>. Finalize o pagamento para garantir seu horário.</p>
       <p><a href="${process.env.NEXT_PUBLIC_APP_URL}/checkout">Finalizar agora →</a></p>
     `,
-  })
+    })
+  } catch (err) {
+    console.error('[email] Failed to send expiration warning', err)
+  }
 }
