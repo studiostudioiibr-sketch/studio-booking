@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSlotsForDate } from '@/lib/google-calendar'
+import { formatGoogleIntegrationError } from '@/lib/google-api-error'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ slots })
   } catch (err) {
     console.error('[GET /api/slots]', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    const message = formatGoogleIntegrationError(err)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

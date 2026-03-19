@@ -121,6 +121,7 @@ export default function HomePage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
+  const [slotsError, setSlotsError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [addons, setAddons] = useState<AddonKey[]>([])
   const [form, setForm] = useState({ nome: '', email: '', telefone: '' })
@@ -136,16 +137,28 @@ export default function HomePage() {
     if (!selectedDate) return
     setSlotsLoading(true)
     setSlots([])
+    setSlotsError('')
     setSelectedSlot(null)
 
     const dateStr = format(selectedDate, 'yyyy-MM-dd')
     fetch(`/api/slots?date=${dateStr}`)
-      .then(r => r.json())
-      .then(data => {
-        setSlots(data.slots ?? [])
+      .then(async r => {
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) {
+          setSlots([])
+          setSlotsError(typeof data.error === 'string' ? data.error : 'Erro ao carregar horários.')
+          setStep('time')
+          return
+        }
+        setSlotsError('')
+        setSlots(Array.isArray(data.slots) ? data.slots : [])
         setStep('time')
       })
-      .catch(() => setSlots([]))
+      .catch(() => {
+        setSlots([])
+        setSlotsError('Erro de rede ao carregar horários. Tente novamente.')
+        setStep('time')
+      })
       .finally(() => setSlotsLoading(false))
   }, [selectedDate])
 
@@ -309,9 +322,21 @@ export default function HomePage() {
                 ))}
               </div>
             ) : slots.length === 0 ? (
-              <p className="text-sm text-muted font-body">
-                Nenhum horário disponível para esta data. Tente outro dia.
-              </p>
+              <div className="space-y-2">
+                {slotsError ? (
+                  <div
+                    role="alert"
+                    className="text-sm font-body text-left p-4 border border-red-200 bg-red-50/80 text-red-900 leading-relaxed"
+                  >
+                    <p className="font-medium text-red-950 mb-1">Não foi possível carregar os horários</p>
+                    <p>{slotsError}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted font-body">
+                    Nenhum horário disponível para esta data. Tente outro dia.
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-3 gap-2 stagger">
                 {slots.map(slot => {
