@@ -245,9 +245,11 @@ export default function HomePage() {
         <span className="font-display text-xl tracking-tight">Studio II</span>
         <a
           href="https://wa.me/5521959023665"
-          className="text-xs font-body tracking-widest uppercase text-ink/40 hover:text-ink transition-colors"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center px-4 py-2 rounded-full text-[11px] font-body font-semibold tracking-widest uppercase bg-[#25D366] text-white hover:bg-[#20BA5A] active:scale-[0.98] transition-all shadow-sm"
         >
-          Whatsapp
+          WhatsApp
         </a>
       </header>
 
@@ -476,6 +478,10 @@ export default function HomePage() {
               <p className="text-xs text-muted font-body pt-1">
                 PIX à vista · Cartão em até 2× sem juros
               </p>
+              <p className="text-xs text-muted/80 font-body pt-3 leading-relaxed border-t border-ink/10 mt-3">
+                O valor acima é da reserva da sessão. Depois dos cliques você escolhe quantas fotos quer
+                levar — cada uma a partir R$ 80, podendo negociar direto no estúdio.
+              </p>
             </div>
 
             {submitError && (
@@ -502,10 +508,11 @@ export default function HomePage() {
           </div>
           <ul className="space-y-2 text-sm font-body text-muted">
             {[
-              '15 fotos editadas em alta resolução',
               'Até 3 looks diferentes',
               '1 hora de sessão de cliques',
-              'Direção e supervisão na seleção',
+              'Direção e acompanhamento durante os cliques',
+              'Após a sessão você escolhe quantas fotos deseja (editadas em alta resolução)',
+              'Cada foto a partir de R$ 80 — valores podem ser negociados presencialmente no estúdio',
             ].map(item => (
               <li key={item} className="flex items-center gap-3">
                 <span className="text-accent text-xs">—</span>
@@ -514,7 +521,7 @@ export default function HomePage() {
             ))}
           </ul>
           <p className="text-xs text-muted/60 font-body mt-6 leading-relaxed">
-            Look adicional R$ 80,00 · Fotos extras R$ 65,00<br />
+            Look adicional a partir de R$ 80<br />
             Rua Miranda Valverde, 123 — Botafogo, Rio de Janeiro
           </p>
         </section>
