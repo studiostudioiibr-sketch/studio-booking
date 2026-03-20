@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       createConfirmedCalendarEvent({
         slot_datetime: confirmed.slot_datetime,
         cliente_nome: confirmed.cliente_nome,
+        cliente_email: confirmed.cliente_email,
         addons: JSON.parse(confirmed.addons || '[]'),
       }),
       sendConfirmationEmail(confirmed),

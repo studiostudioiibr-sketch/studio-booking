@@ -12,7 +12,7 @@ function getAuth() {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!)
   return new google.auth.GoogleAuth({
     credentials,
-    scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
+    scopes: ['https://www.googleapis.com/auth/calendar.events'],
   })
 }
 
@@ -119,9 +119,11 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
 export async function createConfirmedCalendarEvent(params: {
   slot_datetime: string
   cliente_nome: string
+  cliente_email: string
   addons: string[]
 }): Promise<void> {
   const calendar = google.calendar({ version: 'v3', auth: getAuth() })
+  const calendarId = process.env.GOOGLE_CALENDAR_ID!
 
   const start = new Date(params.slot_datetime)
   const end = new Date(start.getTime() + 60 * 60 * 1000) // 1 hour session
@@ -129,15 +131,69 @@ export async function createConfirmedCalendarEvent(params: {
   const addonsLabel = params.addons.length > 0
     ? ` + ${params.addons.join(', ')}`
     : ''
+  const hasMakeup = params.addons.includes('makeup')
+  const hasStylist = params.addons.includes('stylist')
+  const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim()
+  const attendees = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
+    .filter(Boolean)
+    .map(email => ({ email }))
+
+  const slotZoned = toZonedTime(start, TZ)
+  const slotDate = format(slotZoned, 'yyyy-MM-dd')
+  const dayStart = new Date(`${slotDate}T00:00:00-03:00`).toISOString()
+  const dayEnd = new Date(`${slotDate}T23:59:59-03:00`).toISOString()
+
+  const eventsRes = await calendar.events.list({
+    calendarId,
+    timeMin: dayStart,
+    timeMax: dayEnd,
+    singleEvents: true,
+    orderBy: 'startTime',
+  })
+
+  const targetStartIso = start.toISOString()
+  const availabilityEvent = (eventsRes.data.items ?? []).find(event => {
+    const summary = event.summary?.toLowerCase() ?? ''
+    const isAvailability = summary.includes('slot') || summary.includes('disponível')
+    const eventStartRaw = event.start?.dateTime
+    if (!isAvailability || !eventStartRaw) return false
+    return new Date(eventStartRaw).toISOString() === targetStartIso
+  })
+
+  const availabilityDescription = [
+    'Reserva confirmada via Studio II Booking',
+    `Cliente: ${params.cliente_nome}`,
+    `Maquiadora: ${hasMakeup ? 'Sim' : 'Não'}`,
+    `Figurinista: ${hasStylist ? 'Sim' : 'Não'}`,
+  ].join('\n')
+
+  if (availabilityEvent?.id) {
+    await calendar.events.patch({
+      calendarId,
+      eventId: availabilityEvent.id,
+      sendUpdates: 'all',
+      requestBody: {
+        summary: `Reservado · ${params.cliente_nome}`,
+        description: availabilityDescription,
+        start: { dateTime: start.toISOString(), timeZone: TZ },
+        end: { dateTime: end.toISOString(), timeZone: TZ },
+        colorId: '11',
+        attendees,
+      },
+    })
+    return
+  }
 
   await calendar.events.insert({
-    calendarId: process.env.GOOGLE_CALENDAR_ID!,
+    calendarId,
+    sendUpdates: 'all',
     requestBody: {
       summary: `📸 Sessão: ${params.cliente_nome}${addonsLabel}`,
-      description: `Reserva confirmada via Studio II Booking`,
+      description: availabilityDescription,
       start: { dateTime: start.toISOString(), timeZone: TZ },
       end: { dateTime: end.toISOString(), timeZone: TZ },
       colorId: '2', // sage green
+      attendees,
     },
   })
 }

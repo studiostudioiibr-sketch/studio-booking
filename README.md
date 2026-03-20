@@ -81,10 +81,18 @@ cp .env.example .env.local
 3. Compartilhe o calendário com o e-mail da Service Account (permissão de **Editor**)
 4. Vá em Configurações do calendário → "Integrar agenda" → copie o **Calendar ID**
 5. Cole em `GOOGLE_CALENDAR_ID` no `.env.local`
-6. Crie eventos para os slots disponíveis com títulos como:
+6. Defina `STUDIO_NOTIFICATION_EMAIL` com o e-mail operacional do estúdio
+   (será incluído como attendee nas confirmações)
+7. Garanta que a Service Account tenha permissão de **Editor** no calendário
+   (leitura e escrita de eventos)
+8. Crie eventos para os slots disponíveis com títulos como:
    - `Slot 09:00`
    - `Disponível 14:00`
-   - `Sessão 16:00`
+9. Após pagamento confirmado, o app tenta localizar o evento de disponibilidade
+   no mesmo dia/horário (comparação por instante UTC) e aplica patch:
+   - título: `Reservado · Nome do Cliente`
+   - descrição: cliente + `Maquiadora: Sim/Não` + `Figurinista: Sim/Não`
+   - attendees: studio + cliente, com `sendUpdates=all`
 
 ### 5. PagBank (PIX + Cartão)
 
@@ -112,6 +120,7 @@ Se você **não** configurar `RESEND_API_KEY` e `EMAIL_FROM`, o app **não envia
 ```env
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 GOOGLE_CALENDAR_ID=studio@gmail.com
+STUDIO_NOTIFICATION_EMAIL=studio@seudominio.com
 GOOGLE_SHEET_ID=1BxiMV...
 PAGBANK_TOKEN=...
 PAGBANK_EMAIL=...
@@ -201,12 +210,27 @@ studio-booking/
 8a. PIX: POST /api/payment/pix → gera QR Code PagBank
     └─ Frontend faz polling em /api/booking/status a cada 3s
     └─ PagBank dispara webhook → /api/webhook/pagbank
-       └─ Confirma no Sheets + cria evento no Calendar + envia e-mail
+       └─ Confirma no Sheets + patch de slot no Calendar (ou insert fallback) + envia e-mail
 8b. Cartão: POST /api/payment/card → PagBank
-    └─ Aprovado → confirma no Sheets + Calendar + e-mail
+    └─ Aprovado → confirma no Sheets + patch/insert no Calendar + e-mail
     └─ PagBank dispara webhook → /api/webhook/pagbank (redundância)
 9. Tela de confirmação
 ```
+
+---
+
+## Regras operacionais de agenda (negócio)
+
+1. O cliente só vê horários cujo evento no Google Calendar tenha no título
+   `slot`, `sessão` ou `disponível`.
+2. Quando um pagamento é confirmado, o app procura um evento de disponibilidade
+   no mesmo dia/horário da reserva (match por instante UTC, timezone-safe).
+3. Se encontrar, aplica patch no evento:
+   - `Reservado · Nome do Cliente`
+   - informações de maquiagem/figurinista em `Sim/Não`
+   - attendees com studio + cliente, solicitando e-mails do Google.
+4. Se não encontrar evento compatível, cria evento de sessão confirmada
+   como fallback operacional.
 
 ---
 
