@@ -88,6 +88,8 @@ cp .env.example .env.local
 8. Crie eventos para os slots disponíveis com títulos como:
    - `Slot 09:00`
    - `Disponível 14:00`
+10. Sem evento de disponibilidade em um dia, esse dia ficará sem horários no site
+    (não existe fallback automático de horários fixos).
 9. Após pagamento confirmado, o app tenta localizar o evento de disponibilidade
    no mesmo dia/horário (comparação por instante UTC) e aplica patch:
    - título: `Reservado · Nome do Cliente`
@@ -223,13 +225,15 @@ studio-booking/
 
 1. O cliente só vê horários cujo evento no Google Calendar tenha no título
    `slot`, `sessão` ou `disponível`.
-2. Quando um pagamento é confirmado, o app procura um evento de disponibilidade
+2. Se não houver evento de disponibilidade em um dia, o site retorna lista vazia
+   de slots para essa data.
+3. Quando um pagamento é confirmado, o app procura um evento de disponibilidade
    no mesmo dia/horário da reserva (match por instante UTC, timezone-safe).
-3. Se encontrar, aplica patch no evento:
+4. Se encontrar, aplica patch no evento:
    - `Reservado · Nome do Cliente`
    - informações de maquiagem/figurinista em `Sim/Não`
    - attendees com studio + cliente, solicitando e-mails do Google.
-4. Se não encontrar evento compatível, cria evento de sessão confirmada
+5. Se não encontrar evento compatível, cria evento de sessão confirmada
    como fallback operacional.
 
 ---

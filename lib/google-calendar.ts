@@ -21,7 +21,7 @@ function getAuth() {
 //   1. Fetch all-day or timed events from Google Calendar for the date
 //      (the photographer creates events like "Slot 09:00" for each opening)
 //   2. Cross-reference with Sheets reservations (applying lazy expiration)
-//   3. Return enriched Slot list
+//   3. Return enriched Slot list (no default fallback slots)
 
 export async function getSlotsForDate(date: string): Promise<Slot[]> {
   const calendar = google.calendar({ version: 'v3', auth: getAuth() })
@@ -81,34 +81,6 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
 
     return { datetime, label, available, hold_expires_at }
   })
-
-  // Fallback: if photographer hasn't set up Calendar events yet,
-  // generate default time slots (09:00, 11:00, 14:00, 16:00, 18:00)
-  if (slots.length === 0) {
-    const defaultHours = [9, 11, 14, 16, 18]
-    return defaultHours.map(hour => {
-      const datetime = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00-03:00`).toISOString()
-      const label = `${String(hour).padStart(2, '0')}:00`
-
-      const reservation = reservations.find(r => r.slot_datetime === datetime)
-      let available = true
-      let hold_expires_at: string | undefined = undefined
-
-      if (reservation) {
-        if (reservation.status === 'CONFIRMADO') {
-          available = false
-        } else if (reservation.status === 'HOLD') {
-          const expiresAt = new Date(reservation.expires_at)
-          if (expiresAt > now) {
-            available = false
-            hold_expires_at = reservation.expires_at
-          }
-        }
-      }
-
-      return { datetime, label, available, hold_expires_at }
-    })
-  }
 
   return slots
 }
