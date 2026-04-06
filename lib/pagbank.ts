@@ -4,22 +4,29 @@ const PAGBANK_BASE = process.env.PAGBANK_ENV === 'production'
   ? 'https://api.pagseguro.com'
   : 'https://sandbox.api.pagseguro.com'
 
-// ─── Create card charge ───────────────────────────────────────────────────────
+function pagbankNotificationUrls(): string[] | undefined {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
+  if (!base) return undefined
+  return [`${base}/api/webhook/pagbank`]
+}
+
+// ─── Create card charge (cartão criptografado no browser — SDK PagSeguro) ─────
 
 export async function createCardCharge(params: {
   reservation_id: string
   total_cents: number
   cliente_nome: string
   cliente_email: string
-  card: {
-    number: string
-    holder: string
-    expiry_month: string
-    expiry_year: string
-    cvv: string
-  }
+  /** Payload RSA gerado por PagSeguro.encryptCard().encryptedCard */
+  encrypted: string
+  /** Nome impresso no cartão (deve bater com o usado na criptografia) */
+  holder_name: string
+  /** CPF do portador (somente dígitos), recomendado pela API PagBank */
+  holder_tax_id?: string
   installments?: number
 }): Promise<CardPaymentResponse & { transaction_id: string }> {
+  const taxId = params.holder_tax_id?.replace(/\D/g, '')
+  const notify = pagbankNotificationUrls()
   const body = {
     reference_id: params.reservation_id,
     customer: {
@@ -33,6 +40,7 @@ export async function createCardCharge(params: {
         unit_amount: params.total_cents,
       },
     ],
+    ...(notify?.length ? { notification_urls: notify } : {}),
     charges: [
       {
         reference_id: params.reservation_id,
@@ -46,13 +54,12 @@ export async function createCardCharge(params: {
           installments: params.installments ?? 1,
           capture: true,
           card: {
-            number: params.card.number.replace(/\s/g, ''),
-            exp_month: params.card.expiry_month,
-            exp_year: params.card.expiry_year,
-            security_code: params.card.cvv,
-            holder: {
-              name: params.card.holder,
-            },
+            encrypted: params.encrypted,
+            store: false,
+          },
+          holder: {
+            name: params.holder_name,
+            ...(taxId && (taxId.length === 11 || taxId.length === 14) ? { tax_id: taxId } : {}),
           },
         },
       },
@@ -77,7 +84,11 @@ export async function createCardCharge(params: {
   const charge = data.charges?.[0]
   const paymentResponse = charge?.payment_response
 
-  const approved = paymentResponse?.code === '10000' || charge?.status === 'PAID'
+  const code = String(paymentResponse?.code ?? '')
+  const approved =
+    charge?.status === 'PAID' ||
+    code === '10000' ||
+    code === '20000'
 
   return {
     transaction_id: data.id ?? '',
@@ -102,6 +113,7 @@ export async function createPixCharge(params: {
 }> {
   const expiresInMinutes = Math.max(1, params.expires_in_minutes ?? 15)
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString()
+  const notify = pagbankNotificationUrls()
 
   const body = {
     reference_id: params.reservation_id,
@@ -116,6 +128,7 @@ export async function createPixCharge(params: {
         unit_amount: params.total_cents,
       },
     ],
+    ...(notify?.length ? { notification_urls: notify } : {}),
     charges: [
       {
         reference_id: params.reservation_id,

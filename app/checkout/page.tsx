@@ -2,6 +2,28 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
+
+type PagSeguroEncryptResult = {
+  encryptedCard: string
+  hasErrors: boolean
+  errors?: Array<{ code?: string; message?: string }>
+}
+
+declare global {
+  interface Window {
+    PagSeguro?: {
+      encryptCard: (opts: {
+        publicKey: string
+        holder: string
+        number: string
+        expMonth: string
+        expYear: string
+        securityCode: string
+      }) => PagSeguroEncryptResult
+    }
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -172,17 +194,36 @@ function CardPanel({
     expiry: '',
     cvv: '',
     installments: '1',
+    holderTaxId: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [publicKey, setPublicKey] = useState<string | null>(null)
+  const [configError, setConfigError] = useState('')
+  const [sdkReady, setSdkReady] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/payment/pagbank-config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error || !data.publicKey) {
+          setConfigError(data.error ?? 'Chave PagBank indisponível.')
+          return
+        }
+        setPublicKey(data.publicKey)
+      })
+      .catch(() => setConfigError('Não foi possível carregar a configuração de pagamento.'))
+  }, [])
 
   const formatCardNumber = (val: string) =>
     val.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim()
 
   const formatExpiry = (val: string) => {
-    const digits = val.replace(/\D/g, '').slice(0, 6)
+    const digits = val.replace(/\D/g, '').slice(0, 6) // MM + AA ou MM + AAA (até 6 dígitos)
     return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits
   }
+
+  const formatCpfCnpj = (val: string) => val.replace(/\D/g, '').slice(0, 14)
 
   const handleSubmit = async () => {
     setError('')
@@ -190,9 +231,40 @@ function CardPanel({
 
     const [expiry_month, expiry_year] = card.expiry.split('/')
     const cardNumber = card.number.replace(/\s/g, '')
+    const rawYear = (expiry_year ?? '').replace(/\D/g, '')
+    const expYearFull =
+      rawYear.length === 2 ? `20${rawYear}` : rawYear.slice(0, 4)
 
-    if (cardNumber.length < 13 || !expiry_month || expiry_year?.length < 4 || !card.cvv || !card.holder) {
+    if (cardNumber.length < 13 || !expiry_month || expYearFull.length !== 4 || !card.cvv || !card.holder) {
       setError('Preencha todos os dados do cartão corretamente.')
+      setLoading(false)
+      return
+    }
+
+    if (!publicKey) {
+      setError(configError || 'Pagamento com cartão indisponível no momento.')
+      setLoading(false)
+      return
+    }
+
+    if (!sdkReady || !window.PagSeguro?.encryptCard) {
+      setError('Carregando segurança do pagamento… tente de novo em instantes.')
+      setLoading(false)
+      return
+    }
+
+    const enc = window.PagSeguro.encryptCard({
+      publicKey,
+      holder: card.holder.trim(),
+      number: cardNumber,
+      expMonth: expiry_month.padStart(2, '0'),
+      expYear: expYearFull,
+      securityCode: card.cvv,
+    })
+
+    if (enc.hasErrors || !enc.encryptedCard) {
+      const msg = enc.errors?.map(e => e.message).filter(Boolean).join(' ') || 'Não foi possível criptografar o cartão.'
+      setError(msg)
       setLoading(false)
       return
     }
@@ -203,13 +275,11 @@ function CardPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reservation_id: reservationId,
-          card: {
-            number: cardNumber,
-            holder: card.holder,
-            expiry_month,
-            expiry_year: `20${expiry_year}`,
-            cvv: card.cvv,
-          },
+          encrypted: enc.encryptedCard,
+          holder_name: card.holder.trim(),
+          ...(card.holderTaxId.replace(/\D/g, '').length >= 11
+            ? { holder_tax_id: card.holderTaxId }
+            : {}),
           installments: Number(card.installments),
         }),
       })
@@ -230,6 +300,11 @@ function CardPanel({
 
   return (
     <div className="space-y-4 py-4">
+      <Script
+        src="https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js"
+        strategy="lazyOnload"
+        onLoad={() => setSdkReady(true)}
+      />
       {/* Card number */}
       <div>
         <label className="block text-[10px] font-body font-medium tracking-widest uppercase text-muted mb-1.5">
@@ -255,6 +330,20 @@ function CardPanel({
           placeholder="MARIA SILVA"
           value={card.holder}
           onChange={e => setCard(p => ({ ...p, holder: e.target.value.toUpperCase() }))}
+          className="w-full border-b border-ink/20 bg-transparent py-2.5 font-body text-base text-ink placeholder:text-ink/20 focus:outline-none focus:border-ink transition-colors"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-body font-medium tracking-widest uppercase text-muted mb-1.5">
+          CPF do titular <span className="normal-case tracking-normal text-muted/70">(recomendado)</span>
+        </label>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="000.000.000-00"
+          value={card.holderTaxId}
+          onChange={e => setCard(p => ({ ...p, holderTaxId: formatCpfCnpj(e.target.value) }))}
           className="w-full border-b border-ink/20 bg-transparent py-2.5 font-body text-base text-ink placeholder:text-ink/20 focus:outline-none focus:border-ink transition-colors"
         />
       </div>
@@ -305,16 +394,20 @@ function CardPanel({
         </select>
       </div>
 
+      {configError && (
+        <p className="text-amber-800 text-sm font-body p-3 bg-amber-50 border border-amber-100">{configError}</p>
+      )}
+
       {error && (
         <p className="text-red-500 text-sm font-body p-3 bg-red-50 border border-red-100">{error}</p>
       )}
 
       <button
         onClick={handleSubmit}
-        disabled={loading}
+        disabled={loading || !publicKey || !sdkReady}
         className="w-full bg-ink text-paper py-4 font-body text-sm font-medium tracking-widest uppercase hover:bg-ink/90 active:scale-[0.99] transition-all mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {loading ? 'Processando...' : `Pagar ${formatCurrency(totalCents)}`}
+        {loading ? 'Processando...' : !sdkReady || !publicKey ? 'Preparando pagamento…' : `Pagar ${formatCurrency(totalCents)}`}
       </button>
     </div>
   )

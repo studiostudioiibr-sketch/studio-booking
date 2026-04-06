@@ -101,11 +101,24 @@ cp .env.example .env.local
 1. Crie conta em [pagseguro.uol.com.br](https://pagseguro.uol.com.br)
 2. Acesse **Preferências → Integrações → Token de Segurança**
 3. Cole em `PAGBANK_TOKEN` e `PAGBANK_EMAIL`
-4. Configure o webhook para:
+4. **Chave pública para cartão** (obrigatória — o cartão é criptografado no navegador com o [SDK PagBank](https://developer.pagbank.com.br/reference/criar-pagar-pedido-com-cartao)):
+   - Sandbox:
+     ```bash
+     curl -s -X POST 'https://sandbox.api.pagseguro.com/public-keys' \
+       -H "Authorization: Bearer SEU_TOKEN_SANDBOX" \
+       -H "Content-Type: application/json" \
+       -d '{"type":"card"}'
+     ```
+   - Produção: mesmo `POST`, host `https://api.pagseguro.com/public-keys`
+   - Copie o valor `public_key` da resposta para `PAGBANK_PUBLIC_KEY` (Vercel / `.env.local`)
+5. Configure o webhook para:
    ```
    https://seu-app.vercel.app/api/webhook/pagbank
    ```
-5. Para testes, use `PAGBANK_ENV=sandbox`
+6. Garanta `NEXT_PUBLIC_APP_URL` igual à URL pública do app (usado em `notification_urls` nos pedidos).
+7. Para testes, use `PAGBANK_ENV=sandbox` e token + chave pública do sandbox.
+
+**Logs de homologação:** com cartão criptografado, o request para `/orders` leva `charges[].payment_method.card.encrypted` (Base64), sem número/CVV em claro. Capture request/response reais do sandbox (DevTools → Network na sua API, ou logs do servidor) para enviar ao PagBank.
 
 ### 6. Resend (E-mail) — opcional
 
@@ -126,6 +139,7 @@ STUDIO_NOTIFICATION_EMAIL=studio@seudominio.com
 GOOGLE_SHEET_ID=1BxiMV...
 PAGBANK_TOKEN=...
 PAGBANK_EMAIL=...
+PAGBANK_PUBLIC_KEY=...
 PAGBANK_ENV=sandbox
 RESEND_API_KEY=re_...
 EMAIL_FROM=Studio II <reservas@seudominio.com>

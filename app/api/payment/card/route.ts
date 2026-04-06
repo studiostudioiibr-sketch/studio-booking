@@ -7,13 +7,9 @@ import { z } from 'zod'
 
 const schema = z.object({
   reservation_id: z.string().uuid(),
-  card: z.object({
-    number: z.string().min(13),
-    holder: z.string().min(2),
-    expiry_month: z.string().length(2),
-    expiry_year: z.string().length(4),
-    cvv: z.string().min(3).max(4),
-  }),
+  encrypted: z.string().min(64, 'Payload criptografado inválido'),
+  holder_name: z.string().min(2, 'Nome no cartão obrigatório'),
+  holder_tax_id: z.string().optional(),
   installments: z.number().min(1).max(2).default(1),
 })
 
@@ -26,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Dados de cartão inválidos' }, { status: 400 })
     }
 
-    const { reservation_id, card, installments } = parsed.data
+    const { reservation_id, encrypted, holder_name, holder_tax_id, installments } = parsed.data
 
     // Load reservation
     const result = await getReservationById(reservation_id)
@@ -50,7 +46,9 @@ export async function POST(req: NextRequest) {
       total_cents: reservation.total_cents,
       cliente_nome: reservation.cliente_nome,
       cliente_email: reservation.cliente_email,
-      card,
+      encrypted,
+      holder_name: holder_name,
+      holder_tax_id: holder_tax_id,
       installments,
     })
 

@@ -48,14 +48,10 @@ export interface CreateBookingResponse {
 export interface CreatePaymentRequest {
   reservation_id: string
   gateway: 'pagbank'
-  // Cartão (só para pagbank)
-  card?: {
-    number: string
-    holder: string
-    expiry_month: string
-    expiry_year: string
-    cvv: string
-  }
+  /** Cartão: apenas payload criptografado (SDK PagSeguro no browser) */
+  encrypted?: string
+  holder_name?: string
+  holder_tax_id?: string
 }
 
 export interface PixPaymentResponse {
