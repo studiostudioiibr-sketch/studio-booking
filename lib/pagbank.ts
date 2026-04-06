@@ -1,4 +1,5 @@
 import { CardPaymentResponse } from './types'
+import { digitsOnlyTaxId, isValidBrazilTaxIdDigits } from './brazilian-tax-id'
 
 const PAGBANK_BASE = process.env.PAGBANK_ENV === 'production'
   ? 'https://api.pagseguro.com'
@@ -17,21 +18,29 @@ export async function createCardCharge(params: {
   total_cents: number
   cliente_nome: string
   cliente_email: string
+  /** CPF/CNPJ do comprador — obrigatório (`customer.tax_id`) */
+  customer_tax_id: string
   /** Payload RSA gerado por PagSeguro.encryptCard().encryptedCard */
   encrypted: string
   /** Nome impresso no cartão (deve bater com o usado na criptografia) */
   holder_name: string
-  /** CPF do portador (somente dígitos), recomendado pela API PagBank */
+  /** CPF/CNPJ do portador em `payment_method.holder`; se inválido, usa customer_tax_id */
   holder_tax_id?: string
   installments?: number
 }): Promise<CardPaymentResponse & { transaction_id: string }> {
-  const taxId = params.holder_tax_id?.replace(/\D/g, '')
+  const customerTax = digitsOnlyTaxId(params.customer_tax_id)
+  if (!isValidBrazilTaxIdDigits(customerTax)) {
+    throw new Error('CPF ou CNPJ do comprador inválido')
+  }
+  const holderTaxRaw = params.holder_tax_id ? digitsOnlyTaxId(params.holder_tax_id) : customerTax
+  const holderTax = isValidBrazilTaxIdDigits(holderTaxRaw) ? holderTaxRaw : customerTax
   const notify = pagbankNotificationUrls()
   const body = {
     reference_id: params.reservation_id,
     customer: {
       name: params.cliente_nome,
       email: params.cliente_email,
+      tax_id: customerTax,
     },
     items: [
       {
@@ -59,7 +68,7 @@ export async function createCardCharge(params: {
           },
           holder: {
             name: params.holder_name,
-            ...(taxId && (taxId.length === 11 || taxId.length === 14) ? { tax_id: taxId } : {}),
+            tax_id: holderTax,
           },
         },
       },
@@ -104,6 +113,8 @@ export async function createPixCharge(params: {
   total_cents: number
   cliente_nome: string
   cliente_email: string
+  /** CPF/CNPJ do pagador — obrigatório (`customer.tax_id`) */
+  customer_tax_id: string
   expires_in_minutes?: number
 }): Promise<{
   transaction_id: string
@@ -114,12 +125,17 @@ export async function createPixCharge(params: {
   const expiresInMinutes = Math.max(1, params.expires_in_minutes ?? 15)
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000).toISOString()
   const notify = pagbankNotificationUrls()
+  const customerTax = digitsOnlyTaxId(params.customer_tax_id)
+  if (!isValidBrazilTaxIdDigits(customerTax)) {
+    throw new Error('CPF ou CNPJ do pagador inválido')
+  }
 
   const body = {
     reference_id: params.reservation_id,
     customer: {
       name: params.cliente_nome,
       email: params.cliente_email,
+      tax_id: customerTax,
     },
     items: [
       {
@@ -160,38 +176,68 @@ export async function createPixCharge(params: {
   }
 
   const data = await res.json()
-  const charge = data?.charges?.[0] ?? {}
-  const paymentMethod = charge?.payment_method ?? {}
-  const pix = paymentMethod?.pix ?? {}
-  const qrCodes = pix?.qr_codes ?? charge?.qr_codes ?? []
-  const qrCode = qrCodes?.[0] ?? {}
-  const links = [
-    ...(pix?.links ?? []),
-    ...(qrCode?.links ?? []),
-    ...(charge?.links ?? []),
-  ]
 
-  const qr_code_text =
-    qrCode?.text ??
-    qrCode?.emv ??
-    pix?.emv ??
-    pix?.payload ??
-    ''
+  // 1) QR no nível do pedido (ex.: doc "Criar Pedido - QR Code - PIX")
+  const orderQr = Array.isArray(data.qr_codes) ? data.qr_codes[0] : null
+  let qr_code_text = ''
+  let qr_code_image_url = ''
+  let expiresOut = expiresAt
 
-  const qr_code_image_url =
-    links.find((l: any) => l?.rel === 'QRCODE.PNG')?.href ??
-    links.find((l: any) => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
-    ''
+  if (orderQr) {
+    qr_code_text =
+      orderQr.text ??
+      orderQr.emv ??
+      orderQr.payload ??
+      ''
+    const oLinks = orderQr.links ?? []
+    qr_code_image_url =
+      oLinks.find((l: any) => l?.rel === 'QRCODE.PNG')?.href ??
+      oLinks.find((l: any) => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
+      ''
+    if (orderQr.expiration_date) expiresOut = orderQr.expiration_date
+  }
+
+  // 2) QR dentro da cobrança PIX
+  if (!qr_code_text) {
+    const charge = data?.charges?.[0] ?? {}
+    const paymentMethod = charge?.payment_method ?? {}
+    const pix = paymentMethod?.pix ?? {}
+    const qrCodes = pix?.qr_codes ?? charge?.qr_codes ?? []
+    const qrCode = qrCodes?.[0] ?? {}
+    const links = [
+      ...(pix?.links ?? []),
+      ...(qrCode?.links ?? []),
+      ...(charge?.links ?? []),
+    ]
+
+    qr_code_text =
+      qrCode?.text ??
+      qrCode?.emv ??
+      pix?.emv ??
+      pix?.payload ??
+      ''
+
+    qr_code_image_url =
+      links.find((l: any) => l?.rel === 'QRCODE.PNG')?.href ??
+      links.find((l: any) => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
+      ''
+
+    if (qrCode?.expiration_date ?? pix?.expiration_date) {
+      expiresOut = qrCode?.expiration_date ?? pix?.expiration_date ?? expiresOut
+    }
+  }
 
   if (!qr_code_text) {
-    throw new Error('PagBank PIX response missing qr code text')
+    throw new Error(
+      `PagBank PIX: resposta sem código PIX. Snippet: ${JSON.stringify(data).slice(0, 400)}`
+    )
   }
 
   return {
-    transaction_id: data?.id ?? charge?.id ?? '',
+    transaction_id: data?.id ?? '',
     qr_code_text,
     qr_code_image_url,
-    expires_at: qrCode?.expiration_date ?? pix?.expiration_date ?? expiresAt,
+    expires_at: expiresOut,
   }
 }
 

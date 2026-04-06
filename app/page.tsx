@@ -124,7 +124,7 @@ export default function HomePage() {
   const [slotsError, setSlotsError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [addons, setAddons] = useState<AddonKey[]>([])
-  const [form, setForm] = useState({ nome: '', email: '', telefone: '' })
+  const [form, setForm] = useState({ nome: '', email: '', telefone: '', cpf: '' })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -183,6 +183,8 @@ export default function HomePage() {
     if (!form.nome.trim() || form.nome.trim().length < 2) errors.nome = 'Nome obrigatório'
     if (!form.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) errors.email = 'E-mail inválido'
     if (!form.telefone.replace(/\D/g, '').match(/^\d{10,11}$/)) errors.telefone = 'Telefone inválido'
+    const doc = form.cpf.replace(/\D/g, '')
+    if (doc.length !== 11 && doc.length !== 14) errors.cpf = 'CPF (11) ou CNPJ (14) dígitos obrigatório'
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -225,6 +227,7 @@ export default function HomePage() {
         slot_label: format(new Date(selectedSlot.datetime), "EEEE, dd 'de' MMMM 'às' HH:mm", { locale: ptBR }),
         cliente_nome: form.nome,
         cliente_email: form.email,
+        cliente_cpf: form.cpf.replace(/\D/g, ''),
         addons,
       }))
 
@@ -380,6 +383,7 @@ export default function HomePage() {
                 { key: 'nome', label: 'Nome completo', type: 'text', placeholder: 'Maria Silva' },
                 { key: 'email', label: 'E-mail', type: 'email', placeholder: 'maria@email.com' },
                 { key: 'telefone', label: 'WhatsApp', type: 'tel', placeholder: '(21) 99999-0000' },
+                { key: 'cpf', label: 'CPF ou CNPJ', type: 'text', placeholder: 'Somente números (11 ou 14 dígitos)' },
               ].map(field => (
                 <div key={field.key}>
                   <label className="block text-[10px] font-body font-medium tracking-widest uppercase text-muted mb-1.5">
@@ -389,7 +393,13 @@ export default function HomePage() {
                     type={field.type}
                     placeholder={field.placeholder}
                     value={form[field.key as keyof typeof form]}
-                    onChange={e => setForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    onChange={e => {
+                      const v =
+                        field.key === 'cpf'
+                          ? e.target.value.replace(/\D/g, '').slice(0, 14)
+                          : e.target.value
+                      setForm(prev => ({ ...prev, [field.key]: v }))
+                    }}
                     className={`
                       w-full border-b bg-transparent py-2.5 font-body text-base text-ink placeholder:text-ink/20
                       focus:outline-none focus:border-ink transition-colors

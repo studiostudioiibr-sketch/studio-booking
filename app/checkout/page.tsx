@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
+import { digitsOnlyTaxId, isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
 
 type PagSeguroEncryptResult = {
   encryptedCard: string
@@ -44,6 +45,8 @@ interface BookingSession {
   slot_label: string
   cliente_nome: string
   cliente_email: string
+  /** CPF/CNPJ só dígitos — exigência PagBank */
+  cliente_cpf?: string
   addons: string[]
 }
 
@@ -99,17 +102,37 @@ function useCountdown(expiresAt: string | null) {
 
 // ─── PIX Panel ────────────────────────────────────────────────────────────────
 
-function PixPanel({ reservationId, totalCents }: { reservationId: string; totalCents: number }) {
+function PixPanel({
+  reservationId,
+  totalCents,
+  payerTaxRaw,
+}: {
+  reservationId: string
+  totalCents: number
+  payerTaxRaw: string
+}) {
   const [loading, setLoading] = useState(true)
   const [pix, setPix] = useState<{ qr_code_text: string; qr_code_image_url: string } | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
+  const taxDigits = digitsOnlyTaxId(payerTaxRaw)
+  const taxOk = isValidBrazilTaxIdDigits(taxDigits)
+
   useEffect(() => {
+    if (!taxOk) {
+      setLoading(false)
+      setPix(null)
+      setError('')
+      return
+    }
+
+    setLoading(true)
+    setError('')
     fetch('/api/payment/pix', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reservation_id: reservationId }),
+      body: JSON.stringify({ reservation_id: reservationId, tax_id: taxDigits }),
     })
       .then(r => r.json())
       .then(data => {
@@ -118,7 +141,7 @@ function PixPanel({ reservationId, totalCents }: { reservationId: string; totalC
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [reservationId])
+  }, [reservationId, taxDigits, taxOk])
 
   const copy = useCallback(async () => {
     if (!pix?.qr_code_text) return
@@ -126,6 +149,14 @@ function PixPanel({ reservationId, totalCents }: { reservationId: string; totalC
     setCopied(true)
     setTimeout(() => setCopied(false), 3000)
   }, [pix])
+
+  if (!taxOk) {
+    return (
+      <p className="text-sm text-muted font-body p-4 bg-ink/5 border border-ink/10">
+        Informe um <strong className="text-ink">CPF ou CNPJ válido</strong> no campo acima para gerar o PIX.
+      </p>
+    )
+  }
 
   if (loading) {
     return (
@@ -182,10 +213,12 @@ function PixPanel({ reservationId, totalCents }: { reservationId: string; totalC
 function CardPanel({
   reservationId,
   totalCents,
+  payerTaxRaw,
   onSuccess,
 }: {
   reservationId: string
   totalCents: number
+  payerTaxRaw: string
   onSuccess: () => void
 }) {
   const [card, setCard] = useState({
@@ -201,6 +234,12 @@ function CardPanel({
   const [publicKey, setPublicKey] = useState<string | null>(null)
   const [configError, setConfigError] = useState('')
   const [sdkReady, setSdkReady] = useState(false)
+
+  useEffect(() => {
+    const d = digitsOnlyTaxId(payerTaxRaw)
+    if (!isValidBrazilTaxIdDigits(d)) return
+    setCard(p => (p.holderTaxId ? p : { ...p, holderTaxId: d }))
+  }, [payerTaxRaw])
 
   useEffect(() => {
     fetch('/api/payment/pagbank-config')
@@ -241,6 +280,12 @@ function CardPanel({
       return
     }
 
+    if (!isValidBrazilTaxIdDigits(digitsOnlyTaxId(payerTaxRaw))) {
+      setError('Informe CPF ou CNPJ válido no campo acima.')
+      setLoading(false)
+      return
+    }
+
     if (!publicKey) {
       setError(configError || 'Pagamento com cartão indisponível no momento.')
       setLoading(false)
@@ -275,9 +320,10 @@ function CardPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reservation_id: reservationId,
+          tax_id: payerTaxRaw,
           encrypted: enc.encryptedCard,
           holder_name: card.holder.trim(),
-          ...(card.holderTaxId.replace(/\D/g, '').length >= 11
+          ...(isValidBrazilTaxIdDigits(digitsOnlyTaxId(card.holderTaxId))
             ? { holder_tax_id: card.holderTaxId }
             : {}),
           installments: Number(card.installments),
@@ -336,7 +382,7 @@ function CardPanel({
 
       <div>
         <label className="block text-[10px] font-body font-medium tracking-widest uppercase text-muted mb-1.5">
-          CPF do titular <span className="normal-case tracking-normal text-muted/70">(recomendado)</span>
+          CPF / CNPJ do titular
         </label>
         <input
           type="text"
@@ -418,6 +464,7 @@ function CardPanel({
 export default function CheckoutPage() {
   const router = useRouter()
   const [booking, setBooking] = useState<BookingSession | null>(null)
+  const [payerDocument, setPayerDocument] = useState('')
   const [gateway, setGateway] = useState<'pix' | 'card'>('pix')
   const [confirmed, setConfirmed] = useState(false)
   const [voucherCopied, setVoucherCopied] = useState(false)
@@ -433,11 +480,22 @@ export default function CheckoutPage() {
       return
     }
     try {
-      setBooking(JSON.parse(raw))
+      const b = JSON.parse(raw) as BookingSession
+      setBooking(b)
+      if (b.cliente_cpf) setPayerDocument(b.cliente_cpf)
     } catch {
       router.replace('/')
     }
   }, [router])
+
+  const persistPayerDocument = useCallback(() => {
+    if (!booking) return
+    const d = digitsOnlyTaxId(payerDocument)
+    if (!isValidBrazilTaxIdDigits(d)) return
+    const next: BookingSession = { ...booking, cliente_cpf: d }
+    setBooking(next)
+    sessionStorage.setItem('booking', JSON.stringify(next))
+  }, [booking, payerDocument])
 
   // Poll for PIX confirmation
   useEffect(() => {
@@ -624,6 +682,29 @@ export default function CheckoutPage() {
           </div>
         </section>
 
+        {/* CPF/CNPJ — obrigatório PagBank (customer.tax_id) */}
+        <section className="mb-8 animate-fade-up" style={{ animationDelay: '40ms' }}>
+          <p className="text-xs font-body tracking-widest uppercase text-muted mb-4">
+            Dados do pagador
+          </p>
+          <label className="block text-[10px] font-body font-medium tracking-widest uppercase text-muted mb-1.5">
+            CPF ou CNPJ
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="11 dígitos (CPF) ou 14 (CNPJ)"
+            value={payerDocument}
+            onChange={e => setPayerDocument(e.target.value.replace(/\D/g, '').slice(0, 14))}
+            onBlur={persistPayerDocument}
+            className="w-full border-b border-ink/20 bg-transparent py-2.5 font-body text-base text-ink placeholder:text-ink/20 focus:outline-none focus:border-ink transition-colors"
+          />
+          <p className="text-[11px] text-muted font-body mt-2">
+            Exigido pelo PagBank para PIX e cartão. Se você já informou no agendamento, o campo vem preenchido.
+          </p>
+        </section>
+
         {/* Payment method toggle */}
         <section className="mb-8 animate-fade-up" style={{ animationDelay: '80ms' }}>
           <p className="text-xs font-body tracking-widest uppercase text-muted mb-4">
@@ -659,11 +740,13 @@ export default function CheckoutPage() {
             <PixPanel
               reservationId={booking.reservation_id}
               totalCents={booking.total_cents}
+              payerTaxRaw={payerDocument}
             />
           ) : (
             <CardPanel
               reservationId={booking.reservation_id}
               totalCents={booking.total_cents}
+              payerTaxRaw={payerDocument}
               onSuccess={() => setConfirmed(true)}
             />
           )}

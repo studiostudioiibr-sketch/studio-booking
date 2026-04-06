@@ -118,6 +118,8 @@ cp .env.example .env.local
 6. Garanta `NEXT_PUBLIC_APP_URL` igual à URL pública do app (usado em `notification_urls` nos pedidos).
 7. Para testes, use `PAGBANK_ENV=sandbox` e token + chave pública do sandbox.
 
+**CPF/CNPJ do pagador:** a API PagBank exige [`customer.tax_id`](https://developer.pagbank.com.br/reference/criar-pedido) (11 ou 14 dígitos) em todo pedido. O fluxo de agendamento pede **CPF ou CNPJ** junto com os dados pessoais; no checkout há o mesmo campo para conferência ou para reservas antigas sem documento salvo.
+
 **Logs de homologação:** com cartão criptografado, o request para `/orders` leva `charges[].payment_method.card.encrypted` (Base64), sem número/CVV em claro. Capture request/response reais do sandbox (DevTools → Network na sua API, ou logs do servidor) para enviar ao PagBank.
 
 ### 6. Resend (E-mail) — opcional

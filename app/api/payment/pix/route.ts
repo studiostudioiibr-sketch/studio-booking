@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getReservationById } from '@/lib/google-sheets'
 import { createPixCharge } from '@/lib/pagbank'
+import { publicErrorMessage } from '@/lib/api-error-message'
 import { z } from 'zod'
+
+const taxIdSchema = z
+  .string()
+  .min(1, 'CPF ou CNPJ obrigatório')
+  .transform(s => s.replace(/\D/g, ''))
+  .refine(d => d.length === 11 || d.length === 14, 'CPF ou CNPJ deve ter 11 ou 14 dígitos')
 
 const schema = z.object({
   reservation_id: z.string().uuid(),
+  tax_id: taxIdSchema,
 })
 
 export async function POST(req: NextRequest) {
@@ -13,10 +21,15 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(body)
 
     if (!parsed.success) {
-      return NextResponse.json({ error: 'reservation_id inválido' }, { status: 400 })
+      const first = parsed.error.flatten().fieldErrors
+      const msg =
+        first.tax_id?.[0] ??
+        first.reservation_id?.[0] ??
+        'Dados inválidos'
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
 
-    const { reservation_id } = parsed.data
+    const { reservation_id, tax_id } = parsed.data
 
     // Load reservation
     const result = await getReservationById(reservation_id)
@@ -46,6 +59,7 @@ export async function POST(req: NextRequest) {
       total_cents: reservation.total_cents,
       cliente_nome: reservation.cliente_nome,
       cliente_email: reservation.cliente_email,
+      customer_tax_id: tax_id,
       expires_in_minutes: minutesLeft,
     })
 
@@ -57,6 +71,9 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     console.error('[POST /api/payment/pix]', err)
-    return NextResponse.json({ error: 'Erro ao gerar PIX' }, { status: 500 })
+    return NextResponse.json(
+      { error: publicErrorMessage(err, 'Erro ao gerar PIX') },
+      { status: 500 }
+    )
   }
 }

@@ -3,10 +3,18 @@ import { getReservationById, confirmReservation } from '@/lib/google-sheets'
 import { createCardCharge } from '@/lib/pagbank'
 import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
+import { publicErrorMessage } from '@/lib/api-error-message'
 import { z } from 'zod'
+
+const taxIdSchema = z
+  .string()
+  .min(1, 'CPF ou CNPJ obrigatório')
+  .transform(s => s.replace(/\D/g, ''))
+  .refine(d => d.length === 11 || d.length === 14, 'CPF ou CNPJ deve ter 11 ou 14 dígitos')
 
 const schema = z.object({
   reservation_id: z.string().uuid(),
+  tax_id: taxIdSchema,
   encrypted: z.string().min(64, 'Payload criptografado inválido'),
   holder_name: z.string().min(2, 'Nome no cartão obrigatório'),
   holder_tax_id: z.string().optional(),
@@ -19,10 +27,18 @@ export async function POST(req: NextRequest) {
     const parsed = schema.safeParse(body)
 
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Dados de cartão inválidos' }, { status: 400 })
+      const f = parsed.error.flatten().fieldErrors
+      const msg =
+        f.tax_id?.[0] ??
+        f.encrypted?.[0] ??
+        f.holder_name?.[0] ??
+        f.reservation_id?.[0] ??
+        'Dados de cartão inválidos'
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
 
-    const { reservation_id, encrypted, holder_name, holder_tax_id, installments } = parsed.data
+    const { reservation_id, tax_id, encrypted, holder_name, holder_tax_id, installments } =
+      parsed.data
 
     // Load reservation
     const result = await getReservationById(reservation_id)
@@ -46,6 +62,7 @@ export async function POST(req: NextRequest) {
       total_cents: reservation.total_cents,
       cliente_nome: reservation.cliente_nome,
       cliente_email: reservation.cliente_email,
+      customer_tax_id: tax_id,
       encrypted,
       holder_name: holder_name,
       holder_tax_id: holder_tax_id,
@@ -82,6 +99,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: 'APROVADO', reservation_id })
   } catch (err) {
     console.error('[POST /api/payment/card]', err)
-    return NextResponse.json({ error: 'Erro ao processar pagamento' }, { status: 500 })
+    return NextResponse.json(
+      { error: publicErrorMessage(err, 'Erro ao processar pagamento') },
+      { status: 500 }
+    )
   }
 }
