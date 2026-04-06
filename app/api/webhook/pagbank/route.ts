@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isPagBankPaymentConfirmed, parsePagBankWebhookPayload } from '@/lib/pagbank'
+import {
+  logPagBankWebhookParsed,
+  logPagBankWebhookRaw,
+  shouldLogPagBankIo,
+} from '@/lib/pagbank-log'
 import { confirmReservation, getReservationById } from '@/lib/google-sheets'
 import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
@@ -7,12 +12,27 @@ import { sendConfirmationEmail } from '@/lib/email'
 export async function POST(req: NextRequest) {
   try {
     const raw = await req.text()
+    logPagBankWebhookRaw(raw)
     const event = parsePagBankWebhookPayload(raw)
 
     if (!event) {
-      console.warn('[webhook/pagbank] Ignored body (non-JSON or unknown shape):', raw.slice(0, 280))
+      if (!shouldLogPagBankIo()) {
+        console.warn('[webhook/pagbank] Ignored body (non-JSON or unknown shape):', raw.slice(0, 280))
+      } else {
+        console.warn('[webhook/pagbank] Ignored body (unknown shape); full body logged above')
+      }
       return NextResponse.json({ received: true, note: 'ignored' })
     }
+
+    logPagBankWebhookParsed({
+      event: event.event,
+      orderId: event.order.id,
+      referenceId: event.order.reference_id,
+      orderStatus: event.order.status,
+      chargesSummary: event.order.charges
+        ?.map(c => `${c.id}:${c.status}`)
+        .join('|'),
+    })
 
     if (!isPagBankPaymentConfirmed(event)) {
       return NextResponse.json({ received: true })

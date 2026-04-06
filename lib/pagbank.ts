@@ -1,5 +1,9 @@
 import { CardPaymentResponse } from './types'
 import { digitsOnlyTaxId, isValidBrazilTaxIdDigits } from './brazilian-tax-id'
+import {
+  logPagBankOrdersRequest,
+  logPagBankOrdersResponse,
+} from './pagbank-log'
 
 const PAGBANK_BASE = process.env.PAGBANK_ENV === 'production'
   ? 'https://api.pagseguro.com'
@@ -75,6 +79,8 @@ export async function createCardCharge(params: {
     ],
   }
 
+  logPagBankOrdersRequest('CARD', body as Record<string, unknown>)
+
   const res = await fetch(`${PAGBANK_BASE}/orders`, {
     method: 'POST',
     headers: {
@@ -84,14 +90,23 @@ export async function createCardCharge(params: {
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`PagBank error ${res.status}: ${err}`)
+  const responseText = await res.text()
+  logPagBankOrdersResponse('CARD', res.status, responseText)
+
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(responseText) as Record<string, unknown>
+  } catch {
+    throw new Error(`PagBank error ${res.status}: non-JSON ${responseText.slice(0, 240)}`)
   }
 
-  const data = await res.json()
-  const charge = data.charges?.[0]
-  const paymentResponse = charge?.payment_response
+  if (!res.ok) {
+    throw new Error(`PagBank error ${res.status}: ${responseText}`)
+  }
+
+  const chargesList = Array.isArray(data.charges) ? data.charges : []
+  const charge = chargesList[0] as Record<string, unknown> | undefined
+  const paymentResponse = charge?.payment_response as Record<string, unknown> | undefined
 
   const code = String(paymentResponse?.code ?? '')
   const approved =
@@ -100,9 +115,9 @@ export async function createCardCharge(params: {
     code === '20000'
 
   return {
-    transaction_id: data.id ?? '',
+    transaction_id: String(data.id ?? ''),
     status: approved ? 'APROVADO' : charge?.status === 'DECLINED' ? 'RECUSADO' : 'PENDENTE',
-    message: paymentResponse?.message ?? 'Processando',
+    message: String(paymentResponse?.message ?? 'Processando'),
   }
 }
 
@@ -158,6 +173,8 @@ export async function createPixCharge(params: {
     ...(notify?.length ? { notification_urls: notify } : {}),
   }
 
+  logPagBankOrdersRequest('PIX', body as Record<string, unknown>)
+
   const res = await fetch(`${PAGBANK_BASE}/orders`, {
     method: 'POST',
     headers: {
@@ -167,60 +184,73 @@ export async function createPixCharge(params: {
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`PagBank PIX error ${res.status}: ${err}`)
+  const responseText = await res.text()
+  logPagBankOrdersResponse('PIX', res.status, responseText)
+
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(responseText) as Record<string, unknown>
+  } catch {
+    throw new Error(`PagBank PIX error ${res.status}: non-JSON ${responseText.slice(0, 240)}`)
   }
 
-  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(`PagBank PIX error ${res.status}: ${responseText}`)
+  }
 
   // 1) QR no nível do pedido (ex.: doc "Criar Pedido - QR Code - PIX")
-  const orderQr = Array.isArray(data.qr_codes) ? data.qr_codes[0] : null
+  const orderQr = Array.isArray(data.qr_codes) ? (data.qr_codes[0] as Record<string, unknown>) : null
   let qr_code_text = ''
   let qr_code_image_url = ''
   let expiresOut = expiresAt
 
   if (orderQr) {
-    qr_code_text =
+    qr_code_text = String(
       orderQr.text ??
-      orderQr.emv ??
-      orderQr.payload ??
-      ''
-    const oLinks = orderQr.links ?? []
+        orderQr.emv ??
+        orderQr.payload ??
+        ''
+    )
+    type PagLink = { rel?: string; href?: string; media?: string }
+    const oLinks = ((orderQr.links as unknown[]) ?? []) as PagLink[]
     qr_code_image_url =
-      oLinks.find((l: any) => l?.rel === 'QRCODE.PNG')?.href ??
-      oLinks.find((l: any) => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
+      oLinks.find(l => l?.rel === 'QRCODE.PNG')?.href ??
+      oLinks.find(l => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
       ''
-    if (orderQr.expiration_date) expiresOut = orderQr.expiration_date
+    if (orderQr.expiration_date) expiresOut = String(orderQr.expiration_date)
   }
 
   // 2) QR dentro da cobrança PIX
   if (!qr_code_text) {
-    const charge = data?.charges?.[0] ?? {}
-    const paymentMethod = charge?.payment_method ?? {}
-    const pix = paymentMethod?.pix ?? {}
-    const qrCodes = pix?.qr_codes ?? charge?.qr_codes ?? []
-    const qrCode = qrCodes?.[0] ?? {}
+    const chList = Array.isArray(data.charges) ? data.charges : []
+    const charge = (chList[0] ?? {}) as Record<string, unknown>
+    const paymentMethod = (charge?.payment_method ?? {}) as Record<string, unknown>
+    const pix = (paymentMethod?.pix ?? {}) as Record<string, unknown>
+    const qrCodes = (pix?.qr_codes ?? charge?.qr_codes ?? []) as unknown[]
+    const qrCode = (qrCodes?.[0] ?? {}) as Record<string, unknown>
+    type PagLink = { rel?: string; href?: string; media?: string }
     const links = [
-      ...(pix?.links ?? []),
-      ...(qrCode?.links ?? []),
-      ...(charge?.links ?? []),
+      ...(((pix?.links as unknown[]) ?? []) as PagLink[]),
+      ...(((qrCode?.links as unknown[]) ?? []) as PagLink[]),
+      ...(((charge?.links as unknown[]) ?? []) as PagLink[]),
     ]
 
-    qr_code_text =
+    qr_code_text = String(
       qrCode?.text ??
-      qrCode?.emv ??
-      pix?.emv ??
-      pix?.payload ??
-      ''
+        qrCode?.emv ??
+        pix?.emv ??
+        pix?.payload ??
+        ''
+    )
 
     qr_code_image_url =
-      links.find((l: any) => l?.rel === 'QRCODE.PNG')?.href ??
-      links.find((l: any) => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
+      links.find(l => l?.rel === 'QRCODE.PNG')?.href ??
+      links.find(l => l?.media?.toLowerCase?.().includes('image/png'))?.href ??
       ''
 
-    if (qrCode?.expiration_date ?? pix?.expiration_date) {
-      expiresOut = qrCode?.expiration_date ?? pix?.expiration_date ?? expiresOut
+    const expPix = qrCode?.expiration_date ?? pix?.expiration_date
+    if (expPix) {
+      expiresOut = String(expPix)
     }
   }
 
@@ -231,7 +261,7 @@ export async function createPixCharge(params: {
   }
 
   return {
-    transaction_id: data?.id ?? '',
+    transaction_id: String(data?.id ?? ''),
     qr_code_text,
     qr_code_image_url,
     expires_at: expiresOut,

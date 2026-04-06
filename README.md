@@ -120,7 +120,7 @@ cp .env.example .env.local
 
 **CPF/CNPJ do pagador:** a API PagBank exige [`customer.tax_id`](https://developer.pagbank.com.br/reference/criar-pedido) (11 ou 14 dígitos) em todo pedido. O fluxo de agendamento pede **CPF ou CNPJ** junto com os dados pessoais; no checkout há o mesmo campo para conferência ou para reservas antigas sem documento salvo.
 
-**Logs de homologação:** com cartão criptografado, o request para `/orders` leva `charges[].payment_method.card.encrypted` (Base64), sem número/CVV em claro. Capture request/response reais do sandbox (DevTools → Network na sua API, ou logs do servidor) para enviar ao PagBank.
+**Logs de homologação (Vercel):** em **sandbox** (`PAGBANK_ENV` diferente de `production`), o servidor grava no **Function Logs** da Vercel: `[PagBank][orders][PIX|CARD] request|response` (JSON truncado; no cartão o campo `encrypted` aparece só parcialmente) e, no webhook, `[webhook/pagbank] body` + `parsed` com `order_id` / `reference_id` / status. O token **nunca** entra no log. Opcional: `PAGBANK_LOG_IO=true` força o mesmo em produção; `PAGBANK_LOG_MAX_CHARS` limita o tamanho (padrão 16384).
 
 ### 6. Resend (E-mail) — opcional
 
