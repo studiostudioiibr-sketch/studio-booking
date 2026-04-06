@@ -130,6 +130,9 @@ export async function createPixCharge(params: {
     throw new Error('CPF ou CNPJ do pagador inválido')
   }
 
+  // PIX via QR Code: usar `qr_codes` no pedido — não enviar `charges` com payment_method PIX
+  // (evita 40002 invalid_parameter em charges[0].payment_method.pix).
+  // Ref.: https://developer.pagbank.com.br/devpagbank/reference/criar-pedido-pedido-com-qr-code
   const body = {
     reference_id: params.reservation_id,
     customer: {
@@ -144,21 +147,15 @@ export async function createPixCharge(params: {
         unit_amount: params.total_cents,
       },
     ],
-    ...(notify?.length ? { notification_urls: notify } : {}),
-    charges: [
+    qr_codes: [
       {
-        reference_id: params.reservation_id,
-        description: 'Sessao Studio II',
         amount: {
           value: params.total_cents,
-          currency: 'BRL',
         },
-        payment_method: {
-          type: 'PIX',
-          expires_at: expiresAt,
-        },
+        expiration_date: expiresAt,
       },
     ],
+    ...(notify?.length ? { notification_urls: notify } : {}),
   }
 
   const res = await fetch(`${PAGBANK_BASE}/orders`, {
@@ -268,6 +265,66 @@ export interface PagBankWebhookEvent {
 export function isPagBankPaymentConfirmed(event: PagBankWebhookEvent): boolean {
   return event?.order?.status === 'PAID' ||
     event?.order?.charges?.some(c => c.status === 'PAID') === true
+}
+
+/**
+ * PagBank pode enviar JSON com envelope `{ event, order }` ou o objeto do pedido na raiz.
+ * Corpos não-JSON (ex.: probes, form-urlencoded) devem ser ignorados com 200.
+ */
+export function parsePagBankWebhookPayload(raw: string): PagBankWebhookEvent | null {
+  const t = raw.trim()
+  if (!t) return null
+
+  if (!t.startsWith('{') && !t.startsWith('[')) {
+    try {
+      const sp = new URLSearchParams(t)
+      const inner =
+        sp.get('data') ??
+        sp.get('payload') ??
+        sp.get('resource') ??
+        sp.get('notification')
+      if (inner?.trim().startsWith('{')) {
+        return parsePagBankWebhookPayload(inner)
+      }
+    } catch {
+      /* ignore */
+    }
+    return null
+  }
+
+  let data: Record<string, unknown>
+  try {
+    data = JSON.parse(t) as Record<string, unknown>
+  } catch {
+    return null
+  }
+
+  const orderObj = data.order
+  if (orderObj && typeof orderObj === 'object') {
+    return {
+      event: String(data.event ?? 'ORDER'),
+      order: orderObj as PagBankWebhookEvent['order'],
+    }
+  }
+
+  const id = data.id
+  const reference_id = data.reference_id
+  if (typeof id === 'string' && id.startsWith('ORDE_') && typeof reference_id === 'string') {
+    const charges = Array.isArray(data.charges) ? data.charges : []
+    return {
+      event: String(data.event ?? 'ORDER'),
+      order: {
+        id,
+        reference_id,
+        status: String(data.status ?? ''),
+        paid_at: data.paid_at as string | undefined,
+        qr_codes: data.qr_codes as PagBankWebhookEvent['order']['qr_codes'],
+        charges: charges as PagBankWebhookEvent['order']['charges'],
+      },
+    }
+  }
+
+  return null
 }
 
 // Backwards compatibility while routes are migrated.

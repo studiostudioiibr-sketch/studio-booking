@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isPagBankPaymentConfirmed, PagBankWebhookEvent } from '@/lib/pagbank'
+import { isPagBankPaymentConfirmed, parsePagBankWebhookPayload } from '@/lib/pagbank'
 import { confirmReservation, getReservationById } from '@/lib/google-sheets'
 import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
 
 export async function POST(req: NextRequest) {
   try {
-    const event: PagBankWebhookEvent = await req.json()
+    const raw = await req.text()
+    const event = parsePagBankWebhookPayload(raw)
+
+    if (!event) {
+      console.warn('[webhook/pagbank] Ignored body (non-JSON or unknown shape):', raw.slice(0, 280))
+      return NextResponse.json({ received: true, note: 'ignored' })
+    }
 
     if (!isPagBankPaymentConfirmed(event)) {
       return NextResponse.json({ received: true })
