@@ -3,6 +3,7 @@ import { getReservationById, confirmReservation } from '@/lib/google-sheets'
 import { createCardCharge } from '@/lib/pagbank'
 import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
+import { slotMeetsMinimumLeadTime } from '@/lib/booking-lead-time'
 import { publicErrorMessage } from '@/lib/api-error-message'
 import { z } from 'zod'
 
@@ -54,6 +55,16 @@ export async function POST(req: NextRequest) {
     }
     if (new Date(reservation.expires_at) <= new Date()) {
       return NextResponse.json({ error: 'Pré-reserva expirada. Refaça o agendamento.' }, { status: 410 })
+    }
+
+    if (!slotMeetsMinimumLeadTime(new Date(reservation.slot_datetime))) {
+      return NextResponse.json(
+        {
+          error:
+            'Este horário não está mais disponível para pagamento (mínimo de 20 minutos de antecedência). Refaça o agendamento.',
+        },
+        { status: 400 }
+      )
     }
 
     // Charge via PagBank

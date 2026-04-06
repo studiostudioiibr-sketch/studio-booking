@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import { Slot } from './types'
+import { slotMeetsMinimumLeadTime } from './booking-lead-time'
 import { getReservationsByDate } from './google-sheets'
 import { format, parseISO } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
@@ -82,7 +83,7 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
     return { datetime, label, available, hold_expires_at }
   })
 
-  return slots
+  return slots.filter(s => slotMeetsMinimumLeadTime(parseISO(s.datetime), now))
 }
 
 // ─── Confirm slot on Calendar (called after payment confirmed) ────────────────

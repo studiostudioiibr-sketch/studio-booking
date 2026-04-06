@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { slotMeetsMinimumLeadTime } from '@/lib/booking-lead-time'
 import { createHoldReservation } from '@/lib/google-sheets'
 import { ADDONS, AddonKey } from '@/lib/types'
 import { z } from 'zod'
@@ -24,6 +25,20 @@ export async function POST(req: NextRequest) {
     }
 
     const { slot_datetime, cliente_nome, cliente_email, cliente_telefone, addons } = parsed.data
+
+    const slotStart = new Date(slot_datetime)
+    if (Number.isNaN(slotStart.getTime())) {
+      return NextResponse.json({ error: 'Data ou horário inválido' }, { status: 400 })
+    }
+    if (!slotMeetsMinimumLeadTime(slotStart)) {
+      return NextResponse.json(
+        {
+          error:
+            'Este horário não está mais disponível para reserva (mínimo de 20 minutos de antecedência). Escolha outro.',
+        },
+        { status: 400 }
+      )
+    }
 
     // Calculate total
     const basePrice = Number(process.env.BASE_PRICE_CENTS ?? 20000)
