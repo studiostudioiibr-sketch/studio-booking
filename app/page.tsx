@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, addDays, startOfToday, isBefore, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
 import { Slot, AddonKey, ADDONS } from '@/lib/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,7 +185,11 @@ export default function HomePage() {
     if (!form.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) errors.email = 'E-mail inválido'
     if (!form.telefone.replace(/\D/g, '').match(/^\d{10,11}$/)) errors.telefone = 'Telefone inválido'
     const doc = form.cpf.replace(/\D/g, '')
-    if (doc.length !== 11 && doc.length !== 14) errors.cpf = 'CPF (11) ou CNPJ (14) dígitos obrigatório'
+    if (doc.length !== 11 && doc.length !== 14) {
+      errors.cpf = 'CPF (11) ou CNPJ (14) dígitos obrigatório'
+    } else if (!isValidBrazilTaxIdDigits(doc)) {
+      errors.cpf = 'CPF ou CNPJ inválido. Confira os dígitos.'
+    }
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }

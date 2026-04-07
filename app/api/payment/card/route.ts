@@ -5,6 +5,7 @@ import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
 import { slotMeetsMinimumLeadTime } from '@/lib/booking-lead-time'
 import { publicErrorMessage } from '@/lib/api-error-message'
+import { isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
 import { z } from 'zod'
 
 const taxIdSchema = z
@@ -12,13 +13,23 @@ const taxIdSchema = z
   .min(1, 'CPF ou CNPJ obrigatório')
   .transform(s => s.replace(/\D/g, ''))
   .refine(d => d.length === 11 || d.length === 14, 'CPF ou CNPJ deve ter 11 ou 14 dígitos')
+  .refine(d => isValidBrazilTaxIdDigits(d), 'Informe um CPF ou CNPJ válido (confira os dígitos).')
+
+const holderTaxIdSchema = z
+  .string()
+  .optional()
+  .transform(s => {
+    const d = (s ?? '').replace(/\D/g, '')
+    return d.length ? d : undefined
+  })
+  .refine(d => d === undefined || isValidBrazilTaxIdDigits(d), 'CPF ou CNPJ do titular inválido.')
 
 const schema = z.object({
   reservation_id: z.string().uuid(),
   tax_id: taxIdSchema,
   encrypted: z.string().min(64, 'Payload criptografado inválido'),
   holder_name: z.string().min(2, 'Nome no cartão obrigatório'),
-  holder_tax_id: z.string().optional(),
+  holder_tax_id: holderTaxIdSchema,
   installments: z.number().min(1).max(2).default(1),
 })
 

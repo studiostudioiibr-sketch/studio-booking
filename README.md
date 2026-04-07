@@ -98,6 +98,9 @@ cp .env.example .env.local
 
 ### 5. PagBank (PIX + Cartão)
 
+Guia interno (config, logs, troubleshooting): **[docs/HOMOLOGACAO-PAGBANK.md](docs/HOMOLOGACAO-PAGBANK.md)**.  
+Evidências só para envio ao PagBank: **[docs/EVIDENCIAS-HOMOLOGACAO-PAGBANK-EXTERNO.md](docs/EVIDENCIAS-HOMOLOGACAO-PAGBANK-EXTERNO.md)**.
+
 1. Crie conta em [pagseguro.uol.com.br](https://pagseguro.uol.com.br)
 2. Acesse **Preferências → Integrações → Token de Segurança**
 3. Cole em `PAGBANK_TOKEN` e `PAGBANK_EMAIL`

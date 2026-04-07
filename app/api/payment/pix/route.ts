@@ -3,6 +3,7 @@ import { getReservationById } from '@/lib/google-sheets'
 import { createPixCharge } from '@/lib/pagbank'
 import { slotMeetsMinimumLeadTime } from '@/lib/booking-lead-time'
 import { publicErrorMessage } from '@/lib/api-error-message'
+import { isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
 import { z } from 'zod'
 
 const taxIdSchema = z
@@ -10,6 +11,7 @@ const taxIdSchema = z
   .min(1, 'CPF ou CNPJ obrigatório')
   .transform(s => s.replace(/\D/g, ''))
   .refine(d => d.length === 11 || d.length === 14, 'CPF ou CNPJ deve ter 11 ou 14 dígitos')
+  .refine(d => isValidBrazilTaxIdDigits(d), 'Informe um CPF ou CNPJ válido (confira os dígitos).')
 
 const schema = z.object({
   reservation_id: z.string().uuid(),
