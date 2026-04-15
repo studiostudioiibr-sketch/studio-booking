@@ -1,11 +1,16 @@
 import { google } from 'googleapis'
-import { Slot } from './types'
+import { MonthAvailabilityByDate, Slot } from './types'
 import { slotMeetsMinimumLeadTime } from './booking-lead-time'
-import { getReservationsByDate } from './google-sheets'
+import { getReservationsByDate, getReservationsByMonth } from './google-sheets'
 import { format, parseISO } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
 
 const TZ = 'America/Sao_Paulo'
+
+function isAvailabilityEvent(summary: string | null | undefined): boolean {
+  const text = summary?.toLowerCase() ?? ''
+  return text.includes('slot') || text.includes('sessão') || text.includes('disponível')
+}
 
 function allowCalendarAttendees(): boolean {
   return process.env.GOOGLE_CALENDAR_ALLOW_ATTENDEES === 'true' || process.env.GOOGLE_CALENDAR_ALLOW_ATTENDEES === '1'
@@ -46,11 +51,7 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
   const calendarEvents = eventsRes.data.items ?? []
 
   // Filter events that look like slots (title starts with "Slot" or "slot")
-  const slotEvents = calendarEvents.filter(e =>
-    e.summary?.toLowerCase().includes('slot') ||
-    e.summary?.toLowerCase().includes('sessão') ||
-    e.summary?.toLowerCase().includes('disponível')
-  )
+  const slotEvents = calendarEvents.filter(e => isAvailabilityEvent(e.summary))
 
   // Fetch reservations for this date from Sheets (for lazy-expiration check)
   const reservations = await getReservationsByDate(date)
@@ -88,6 +89,67 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
   })
 
   return slots.filter(s => slotMeetsMinimumLeadTime(parseISO(s.datetime), now))
+}
+
+export async function getMonthAvailabilityByDate(month: string): Promise<MonthAvailabilityByDate> {
+  const calendar = google.calendar({ version: 'v3', auth: getAuth() })
+  const [yearStr, monthStr] = month.split('-')
+  const year = Number(yearStr)
+  const monthIndex = Number(monthStr) - 1
+
+  const firstDay = new Date(year, monthIndex, 1)
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate()
+  const monthStart = new Date(`${month}-01T00:00:00-03:00`).toISOString()
+  const monthEnd = new Date(year, monthIndex + 1, 0, 23, 59, 59)
+  const monthEndIso = new Date(
+    `${format(monthEnd, 'yyyy-MM-dd')}T23:59:59-03:00`
+  ).toISOString()
+
+  const availabilityByDate: MonthAvailabilityByDate = {}
+  for (let d = 0; d < daysInMonth; d += 1) {
+    const date = new Date(firstDay.getFullYear(), firstDay.getMonth(), d + 1)
+    availabilityByDate[format(date, 'yyyy-MM-dd')] = false
+  }
+
+  const [eventsRes, reservations] = await Promise.all([
+    calendar.events.list({
+      calendarId: process.env.GOOGLE_CALENDAR_ID!,
+      timeMin: monthStart,
+      timeMax: monthEndIso,
+      singleEvents: true,
+      orderBy: 'startTime',
+    }),
+    getReservationsByMonth(month),
+  ])
+
+  const now = new Date()
+  const blockedSlots = new Set(
+    reservations
+      .filter(r => {
+        if (r.status === 'CONFIRMADO') return true
+        if (r.status === 'HOLD') return new Date(r.expires_at) > now
+        return false
+      })
+      .map(r => r.slot_datetime)
+  )
+
+  for (const event of eventsRes.data.items ?? []) {
+    if (!isAvailabilityEvent(event.summary)) continue
+    const startRaw = event.start?.dateTime ?? event.start?.date
+    if (!startRaw) continue
+
+    const startDate = parseISO(startRaw)
+    if (!slotMeetsMinimumLeadTime(startDate, now)) continue
+
+    const dateKey = format(toZonedTime(startDate, TZ), 'yyyy-MM-dd')
+    if (!(dateKey in availabilityByDate)) continue
+
+    if (!blockedSlots.has(startDate.toISOString())) {
+      availabilityByDate[dateKey] = true
+    }
+  }
+
+  return availabilityByDate
 }
 
 // ─── Confirm slot on Calendar (called after payment confirmed) ────────────────

@@ -27,6 +27,8 @@ export interface Slot {
   hold_expires_at?: string     // se em HOLD, quando expira (para UI mostrar)
 }
 
+export type MonthAvailabilityByDate = Record<string, boolean>
+
 // ─── Booking Request ──────────────────────────────────────────────────────────
 
 export interface CreateBookingRequest {

@@ -20,12 +20,22 @@ const BASE_PRICE = Number(process.env.NEXT_PUBLIC_BASE_PRICE_CENTS ?? 20000)
 function MiniCalendar({
   selected,
   onSelect,
+  onViewMonthChange,
+  availabilityByDate,
+  availabilityLoading,
 }: {
   selected: Date | null
   onSelect: (d: Date) => void
+  onViewMonthChange: (month: string) => void
+  availabilityByDate: Record<string, boolean>
+  availabilityLoading: boolean
 }) {
   const [viewMonth, setViewMonth] = useState(() => startOfToday())
   const today = startOfToday()
+
+  useEffect(() => {
+    onViewMonthChange(format(viewMonth, 'yyyy-MM'))
+  }, [onViewMonthChange, viewMonth])
 
   // Build calendar grid for current view month
   const firstDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1)
@@ -81,19 +91,26 @@ function MiniCalendar({
         {cells.map((date, i) => {
           if (!date) return <div key={`empty-${i}`} />
           const isPast = isBefore(startOfDay(date), today)
+          const dateKey = format(date, 'yyyy-MM-dd')
+          const hasAvailability = availabilityByDate[dateKey] === true
+          const isUnavailable = !isPast && !hasAvailability
+          const isDisabled = isPast || isUnavailable || availabilityLoading
           const isSelected = selected
-            ? format(date, 'yyyy-MM-dd') === format(selected, 'yyyy-MM-dd')
+            ? hasAvailability && format(date, 'yyyy-MM-dd') === format(selected, 'yyyy-MM-dd')
             : false
           const isToday = format(date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
 
           return (
             <button
               key={date.toISOString()}
-              onClick={() => !isPast && onSelect(date)}
-              disabled={isPast}
+              onClick={() => !isDisabled && onSelect(date)}
+              disabled={isDisabled}
               className={`
                 relative h-9 w-full flex items-center justify-center text-sm transition-all duration-150
-                ${isPast ? 'text-ink/15 cursor-not-allowed' : 'hover:bg-ink/5 cursor-pointer'}
+                ${isPast ? 'text-ink/15 cursor-not-allowed' : ''}
+                ${isUnavailable ? 'text-ink/25 bg-ink/[0.03] cursor-not-allowed' : ''}
+                ${!isPast && !isUnavailable && !availabilityLoading ? 'hover:bg-ink/5 cursor-pointer' : ''}
+                ${availabilityLoading ? 'text-ink/20 cursor-wait' : ''}
                 ${isSelected ? 'bg-ink text-paper hover:bg-ink' : ''}
                 ${isToday && !isSelected ? 'font-semibold text-accent' : ''}
               `}
@@ -119,10 +136,14 @@ export default function HomePage() {
 
   // Flow state
   const [step, setStep] = useState<Step>('date')
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [selectedDate, setSelectedDate] = useState<Date | null>(() => startOfToday())
   const [slots, setSlots] = useState<Slot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [slotsError, setSlotsError] = useState('')
+  const [visibleMonth, setVisibleMonth] = useState(() => format(startOfToday(), 'yyyy-MM'))
+  const [monthAvailability, setMonthAvailability] = useState<Record<string, boolean>>({})
+  const [monthLoading, setMonthLoading] = useState(false)
+  const [monthError, setMonthError] = useState('')
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
   const [addons, setAddons] = useState<AddonKey[]>([])
   const [form, setForm] = useState({ nome: '', email: '', telefone: '', cpf: '' })
@@ -136,6 +157,9 @@ export default function HomePage() {
   // Load slots when date changes
   useEffect(() => {
     if (!selectedDate) return
+    if (monthLoading) return
+    const selectedDateKey = format(selectedDate, 'yyyy-MM-dd')
+    if (monthAvailability[selectedDateKey] !== true) return
     setSlotsLoading(true)
     setSlots([])
     setSlotsError('')
@@ -161,7 +185,62 @@ export default function HomePage() {
         setStep('time')
       })
       .finally(() => setSlotsLoading(false))
-  }, [selectedDate])
+  }, [monthAvailability, monthLoading, selectedDate])
+
+  // Load month availability map when visible month changes
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    setMonthLoading(true)
+    setMonthError('')
+
+    fetch(`/api/slots?month=${visibleMonth}`, { signal: controller.signal })
+      .then(async r => {
+        const data = await r.json().catch(() => ({}))
+        if (!r.ok) {
+          if (!cancelled) {
+            setMonthAvailability({})
+            setMonthError(typeof data.error === 'string' ? data.error : 'Erro ao carregar calendário mensal.')
+          }
+          return
+        }
+        if (!cancelled) {
+          const map = typeof data.availabilityByDate === 'object' && data.availabilityByDate !== null
+            ? data.availabilityByDate
+            : {}
+          setMonthAvailability(map)
+          setMonthError('')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMonthAvailability({})
+          setMonthError('Erro de rede ao carregar disponibilidade mensal.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setMonthLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [visibleMonth])
+
+  // If selected date becomes unavailable, reset dependent state.
+  useEffect(() => {
+    if (!selectedDate) return
+    const key = format(selectedDate, 'yyyy-MM-dd')
+    if (monthLoading) return
+    if (monthAvailability[key] === false) {
+      setSelectedDate(null)
+      setSelectedSlot(null)
+      setSlots([])
+      setSlotsError('')
+      setStep('date')
+    }
+  }, [monthAvailability, monthLoading, selectedDate])
 
   const handleDateSelect = useCallback((date: Date) => {
     setSelectedDate(date)
@@ -310,7 +389,26 @@ export default function HomePage() {
               </span>
             )}
           </div>
-          <MiniCalendar selected={selectedDate} onSelect={handleDateSelect} />
+          <MiniCalendar
+            selected={selectedDate}
+            onSelect={handleDateSelect}
+            onViewMonthChange={setVisibleMonth}
+            availabilityByDate={monthAvailability}
+            availabilityLoading={monthLoading}
+          />
+          <div className="mt-3 min-h-5">
+            {monthLoading && (
+              <p className="text-xs font-body text-muted">Carregando disponibilidade do mês...</p>
+            )}
+            {!monthLoading && monthError && (
+              <p className="text-xs font-body text-red-500">{monthError}</p>
+            )}
+            {!monthLoading && !monthError && (
+              <p className="text-xs font-body text-muted">
+                Datas sem horários aparecem ofuscadas e não podem ser selecionadas.
+              </p>
+            )}
+          </div>
         </section>
 
         {/* ── Step: Time ── */}

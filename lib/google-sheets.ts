@@ -79,6 +79,11 @@ export async function getReservationsByDate(date: string): Promise<Reservation[]
   return all.filter(r => r.slot_datetime.startsWith(date))
 }
 
+export async function getReservationsByMonth(month: string): Promise<Reservation[]> {
+  const all = await getAllReservations()
+  return all.filter(r => r.slot_datetime.startsWith(month))
+}
+
 // ─── Get single reservation by ID ────────────────────────────────────────────
 
 export async function getReservationById(id: string): Promise<{ reservation: Reservation; rowIndex: number } | null> {
