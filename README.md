@@ -120,6 +120,7 @@ Evidências só para envio ao PagBank: **[docs/EVIDENCIAS-HOMOLOGACAO-PAGBANK-EX
    ```
 6. Garanta `NEXT_PUBLIC_APP_URL` igual à URL pública do app (usado em `notification_urls` nos pedidos).
 7. Para testes, use `PAGBANK_ENV=sandbox` e token + chave pública do sandbox.
+8. (Opcional) Configure `NEXT_PUBLIC_STUDIO_WHATSAPP_NUMBER` para o CTA de confirmação no checkout (`wa.me`); formato somente dígitos com DDI. Se ausente/inválido, o app usa fallback `5521959023665`.
 
 **CPF/CNPJ do pagador:** a API PagBank exige [`customer.tax_id`](https://developer.pagbank.com.br/reference/criar-pedido) (11 ou 14 dígitos) em todo pedido. O fluxo de agendamento pede **CPF ou CNPJ** junto com os dados pessoais; no checkout há o mesmo campo para conferência ou para reservas antigas sem documento salvo.
 
@@ -149,6 +150,7 @@ PAGBANK_ENV=sandbox
 RESEND_API_KEY=re_...
 EMAIL_FROM=Studio II <reservas@seudominio.com>
 NEXT_PUBLIC_APP_URL=https://seu-app.vercel.app
+NEXT_PUBLIC_STUDIO_WHATSAPP_NUMBER=5521959023665
 HOLD_TIMEOUT_MINUTES=15
 BASE_PRICE_CENTS=20000
 ADDON_MAKEUP_CENTS=16000

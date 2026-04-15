@@ -55,6 +55,22 @@ const ADDON_LABELS: Record<string, string> = {
   stylist: 'Figurinista',
 }
 
+const DEFAULT_STUDIO_WHATSAPP_NUMBER = '5521959023665'
+
+function normalizeWhatsAppNumber(value: string | undefined): string {
+  return (value ?? '').replace(/\D/g, '')
+}
+
+function isValidWhatsAppNumber(value: string): boolean {
+  return /^\d{12,15}$/.test(value)
+}
+
+function resolveStudioWhatsAppNumber(): string {
+  const configured = normalizeWhatsAppNumber(process.env.NEXT_PUBLIC_STUDIO_WHATSAPP_NUMBER)
+  if (isValidWhatsAppNumber(configured)) return configured
+  return DEFAULT_STUDIO_WHATSAPP_NUMBER
+}
+
 function buildVoucherText(b: BookingSession): string {
   const addonLine =
     b.addons?.length > 0
@@ -72,6 +88,23 @@ function buildVoucherText(b: BookingSession): string {
     '',
     'Guarde este comprovante (captura de tela, cópia ou salvar como PDF ao imprimir).',
     'Dúvidas: WhatsApp (21) 95902-3665 · @studioiibr',
+  ].join('\n')
+}
+
+function buildWhatsAppConfirmationText(b: BookingSession): string {
+  const addonLine =
+    b.addons?.length > 0
+      ? b.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')
+      : 'Nenhum'
+  return [
+    'Olá! Acabei de finalizar minha reserva no Studio II.',
+    '',
+    `Nome: ${b.cliente_nome}`,
+    `Data e horário: ${b.slot_label}`,
+    `Adicionais: ${addonLine}`,
+    `ID da reserva: ${b.reservation_id}`,
+    '',
+    'Gostaria de confirmar se está tudo certo, por favor.',
   ].join('\n')
 }
 
@@ -521,6 +554,9 @@ export default function CheckoutPage() {
 
   // ── Confirmed screen ────────────────────────────────────────────────────────
   if (confirmed) {
+    const studioWhatsAppNumber = resolveStudioWhatsAppNumber()
+    const whatsappHref = `https://wa.me/${studioWhatsAppNumber}?text=${encodeURIComponent(buildWhatsAppConfirmationText(booking))}`
+
     const handleCopyVoucher = async () => {
       try {
         await navigator.clipboard.writeText(buildVoucherText(booking))
@@ -603,6 +639,14 @@ export default function CheckoutPage() {
             >
               Imprimir / salvar PDF
             </button>
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full border border-[#25D366]/30 text-[#1F9C4A] bg-[#25D366]/10 py-3.5 font-body text-sm font-medium tracking-widest uppercase hover:bg-[#25D366]/15 transition-all text-center"
+            >
+              Confirmar no WhatsApp
+            </a>
             <a
               href="/"
               className="text-xs font-body tracking-widest uppercase text-muted hover:text-ink transition-colors py-2"
