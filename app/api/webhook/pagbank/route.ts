@@ -10,6 +10,7 @@ import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
 
 export async function POST(req: NextRequest) {
+  let reservation_id = ''
   try {
     const raw = await req.text()
     logPagBankWebhookRaw(raw)
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true })
     }
 
-    const reservation_id = event?.order?.reference_id
+    reservation_id = event?.order?.reference_id ?? ''
     const gateway_tx_id = event.order.id
 
     if (!reservation_id) {
@@ -111,7 +112,10 @@ export async function POST(req: NextRequest) {
     console.log('[webhook/pagbank] Confirmed:', reservation_id)
     return NextResponse.json({ received: true })
   } catch (err) {
-    console.error('[webhook/pagbank]', err)
+    console.error('[webhook/pagbank]', {
+      reservation_id,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

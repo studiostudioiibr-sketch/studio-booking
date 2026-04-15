@@ -34,8 +34,10 @@ const schema = z.object({
 })
 
 export async function POST(req: NextRequest) {
+  let reservationIdForLog = ''
   try {
     const body = await req.json()
+    reservationIdForLog = typeof body?.reservation_id === 'string' ? body.reservation_id : ''
     const parsed = schema.safeParse(body)
 
     if (!parsed.success) {
@@ -141,7 +143,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ status: 'APROVADO', reservation_id })
   } catch (err) {
-    console.error('[POST /api/payment/card]', err)
+    console.error('[POST /api/payment/card]', {
+      reservation_id: reservationIdForLog,
+      error: err instanceof Error ? err.message : String(err),
+    })
     return NextResponse.json(
       { error: publicErrorMessage(err, 'Erro ao processar pagamento') },
       { status: 500 }

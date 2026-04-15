@@ -91,7 +91,7 @@ export async function createCardCharge(params: {
   })
 
   const responseText = await res.text()
-  logPagBankOrdersResponse('CARD', res.status, responseText)
+  logPagBankOrdersResponse('CARD', res.status, responseText, params.reservation_id)
 
   let data: Record<string, unknown>
   try {
@@ -185,7 +185,7 @@ export async function createPixCharge(params: {
   })
 
   const responseText = await res.text()
-  logPagBankOrdersResponse('PIX', res.status, responseText)
+  logPagBankOrdersResponse('PIX', res.status, responseText, params.reservation_id)
 
   let data: Record<string, unknown>
   try {

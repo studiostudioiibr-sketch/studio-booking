@@ -45,17 +45,32 @@ export function pagbankOrdersBodyForLog(body: Record<string, unknown>): Record<s
 
 export function logPagBankOrdersRequest(kind: 'PIX' | 'CARD', body: Record<string, unknown>): void {
   if (!shouldLogPagBankIo()) return
+  const reservationId = String(body.reference_id ?? '')
   try {
     const safe = kind === 'CARD' ? pagbankOrdersBodyForLog(body) : body
-    console.log(`[PagBank][orders][${kind}] request`, truncate(JSON.stringify(safe)))
+    console.log(`[PagBank][orders][${kind}] request`, {
+      reservation_id: reservationId,
+      body: truncate(JSON.stringify(safe)),
+    })
   } catch {
-    console.log(`[PagBank][orders][${kind}] request`, '[unserializable]')
+    console.log(`[PagBank][orders][${kind}] request`, {
+      reservation_id: reservationId,
+      body: '[unserializable]',
+    })
   }
 }
 
-export function logPagBankOrdersResponse(kind: 'PIX' | 'CARD', status: number, responseText: string): void {
+export function logPagBankOrdersResponse(
+  kind: 'PIX' | 'CARD',
+  status: number,
+  responseText: string,
+  reservationId?: string
+): void {
   if (!shouldLogPagBankIo()) return
-  console.log(`[PagBank][orders][${kind}] response ${status}`, truncate(responseText))
+  console.log(`[PagBank][orders][${kind}] response ${status}`, {
+    reservation_id: reservationId ?? '',
+    body: truncate(responseText),
+  })
 }
 
 export function logPagBankWebhookRaw(raw: string): void {
@@ -77,6 +92,7 @@ export function logPagBankWebhookParsed(meta: {
       event: meta.event,
       order_id: meta.orderId,
       reference_id: meta.referenceId,
+      reservation_id: meta.referenceId,
       order_status: meta.orderStatus,
       charges: meta.chargesSummary,
     })
