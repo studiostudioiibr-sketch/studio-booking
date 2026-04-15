@@ -82,19 +82,21 @@ cp .env.example .env.local
 4. Vá em Configurações do calendário → "Integrar agenda" → copie o **Calendar ID**
 5. Cole em `GOOGLE_CALENDAR_ID` no `.env.local`
 6. Defina `STUDIO_NOTIFICATION_EMAIL` com o e-mail operacional do estúdio
-   (será incluído como attendee nas confirmações)
-7. Garanta que a Service Account tenha permissão de **Editor** no calendário
+   (usado como referência operacional e para attendees quando habilitado)
+7. Para contas de serviço sem Domain-Wide Delegation, mantenha
+   `GOOGLE_CALENDAR_ALLOW_ATTENDEES=false` (recomendado)
+8. Garanta que a Service Account tenha permissão de **Editor** no calendário
    (leitura e escrita de eventos)
-8. Crie eventos para os slots disponíveis com títulos como:
+9. Crie eventos para os slots disponíveis com títulos como:
    - `Slot 09:00`
    - `Disponível 14:00`
-10. Sem evento de disponibilidade em um dia, esse dia ficará sem horários no site
-    (não existe fallback automático de horários fixos).
-9. Após pagamento confirmado, o app tenta localizar o evento de disponibilidade
+10. Após pagamento confirmado, o app tenta localizar o evento de disponibilidade
    no mesmo dia/horário (comparação por instante UTC) e aplica patch:
    - título: `Reservado · Nome do Cliente`
    - descrição: cliente + `Maquiadora: Sim/Não` + `Figurinista: Sim/Não`
-   - attendees: studio + cliente, com `sendUpdates=all`
+   - attendees (opcional): studio + cliente, quando `GOOGLE_CALENDAR_ALLOW_ATTENDEES=true`
+11. Sem evento de disponibilidade em um dia, esse dia ficará sem horários no site
+    (não existe fallback automático de horários fixos).
 
 ### 5. PagBank (PIX + Cartão)
 
@@ -142,6 +144,7 @@ Se você **não** configurar `RESEND_API_KEY` e `EMAIL_FROM`, o app **não envia
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 GOOGLE_CALENDAR_ID=studio@gmail.com
 STUDIO_NOTIFICATION_EMAIL=studio@seudominio.com
+GOOGLE_CALENDAR_ALLOW_ATTENDEES=false
 GOOGLE_SHEET_ID=1BxiMV...
 PAGBANK_TOKEN=...
 PAGBANK_EMAIL=...
@@ -253,7 +256,7 @@ studio-booking/
 4. Se encontrar, aplica patch no evento:
    - `Reservado · Nome do Cliente`
    - informações de maquiagem/figurinista em `Sim/Não`
-   - attendees com studio + cliente, solicitando e-mails do Google.
+   - attendees com studio + cliente (somente se `GOOGLE_CALENDAR_ALLOW_ATTENDEES=true`).
 5. Se não encontrar evento compatível, cria evento de sessão confirmada
    como fallback operacional.
 

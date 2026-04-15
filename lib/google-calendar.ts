@@ -7,6 +7,10 @@ import { toZonedTime } from 'date-fns-tz'
 
 const TZ = 'America/Sao_Paulo'
 
+function allowCalendarAttendees(): boolean {
+  return process.env.GOOGLE_CALENDAR_ALLOW_ATTENDEES === 'true' || process.env.GOOGLE_CALENDAR_ALLOW_ATTENDEES === '1'
+}
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 function getAuth() {
@@ -115,10 +119,15 @@ export async function createConfirmedCalendarEvent(params: {
       : ''
     const hasMakeup = params.addons.includes('makeup')
     const hasStylist = params.addons.includes('stylist')
-    const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim()
-    const attendees = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
+    const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim() ?? ''
+    const attendeeEmails = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
+      .map(e => e.trim())
       .filter(Boolean)
-      .map(email => ({ email }))
+    const includeAttendees = allowCalendarAttendees() && attendeeEmails.length > 0
+    const attendees = includeAttendees
+      ? attendeeEmails.map(email => ({ email }))
+      : undefined
+    const sendUpdates = includeAttendees ? 'all' : 'none'
 
     const slotZoned = toZonedTime(start, TZ)
     const slotDate = format(slotZoned, 'yyyy-MM-dd')
@@ -130,6 +139,8 @@ export async function createConfirmedCalendarEvent(params: {
       target_start_iso: start.toISOString(),
       day_start: dayStart,
       day_end: dayEnd,
+      include_attendees: includeAttendees,
+      send_updates: sendUpdates,
     })
 
     const eventsRes = await calendar.events.list({
@@ -168,14 +179,14 @@ export async function createConfirmedCalendarEvent(params: {
       await calendar.events.patch({
         calendarId,
         eventId: availabilityEvent.id,
-        sendUpdates: 'all',
+        sendUpdates,
         requestBody: {
           summary: `Reservado · ${params.cliente_nome}`,
           description: availabilityDescription,
           start: { dateTime: start.toISOString(), timeZone: TZ },
           end: { dateTime: end.toISOString(), timeZone: TZ },
           colorId: '11',
-          attendees,
+          ...(attendees ? { attendees } : {}),
         },
       })
       console.log('[calendar/confirm] patch success', {
@@ -187,14 +198,14 @@ export async function createConfirmedCalendarEvent(params: {
 
     const insertRes = await calendar.events.insert({
       calendarId,
-      sendUpdates: 'all',
+      sendUpdates,
       requestBody: {
         summary: `📸 Sessão: ${params.cliente_nome}${addonsLabel}`,
         description: availabilityDescription,
         start: { dateTime: start.toISOString(), timeZone: TZ },
         end: { dateTime: end.toISOString(), timeZone: TZ },
         colorId: '2', // sage green
-        attendees,
+        ...(attendees ? { attendees } : {}),
       },
     })
 
