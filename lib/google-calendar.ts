@@ -90,83 +90,124 @@ export async function getSlotsForDate(date: string): Promise<Slot[]> {
 // Creates a new event on the photographer's calendar marking the session booked
 
 export async function createConfirmedCalendarEvent(params: {
+  reservation_id?: string
   slot_datetime: string
   cliente_nome: string
   cliente_email: string
   addons: string[]
+  source?: 'card' | 'webhook' | 'webhook-reconcile'
 }): Promise<void> {
-  const calendar = google.calendar({ version: 'v3', auth: getAuth() })
-  const calendarId = process.env.GOOGLE_CALENDAR_ID!
+  const logMeta = {
+    reservation_id: params.reservation_id ?? '',
+    source: params.source ?? 'unknown',
+    slot_datetime: params.slot_datetime,
+  }
 
-  const start = new Date(params.slot_datetime)
-  const end = new Date(start.getTime() + 60 * 60 * 1000) // 1 hour session
+  try {
+    const calendar = google.calendar({ version: 'v3', auth: getAuth() })
+    const calendarId = process.env.GOOGLE_CALENDAR_ID!
 
-  const addonsLabel = params.addons.length > 0
-    ? ` + ${params.addons.join(', ')}`
-    : ''
-  const hasMakeup = params.addons.includes('makeup')
-  const hasStylist = params.addons.includes('stylist')
-  const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim()
-  const attendees = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
-    .filter(Boolean)
-    .map(email => ({ email }))
+    const start = new Date(params.slot_datetime)
+    const end = new Date(start.getTime() + 60 * 60 * 1000) // 1 hour session
 
-  const slotZoned = toZonedTime(start, TZ)
-  const slotDate = format(slotZoned, 'yyyy-MM-dd')
-  const dayStart = new Date(`${slotDate}T00:00:00-03:00`).toISOString()
-  const dayEnd = new Date(`${slotDate}T23:59:59-03:00`).toISOString()
+    const addonsLabel = params.addons.length > 0
+      ? ` + ${params.addons.join(', ')}`
+      : ''
+    const hasMakeup = params.addons.includes('makeup')
+    const hasStylist = params.addons.includes('stylist')
+    const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim()
+    const attendees = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
+      .filter(Boolean)
+      .map(email => ({ email }))
 
-  const eventsRes = await calendar.events.list({
-    calendarId,
-    timeMin: dayStart,
-    timeMax: dayEnd,
-    singleEvents: true,
-    orderBy: 'startTime',
-  })
+    const slotZoned = toZonedTime(start, TZ)
+    const slotDate = format(slotZoned, 'yyyy-MM-dd')
+    const dayStart = new Date(`${slotDate}T00:00:00-03:00`).toISOString()
+    const dayEnd = new Date(`${slotDate}T23:59:59-03:00`).toISOString()
 
-  const targetStartIso = start.toISOString()
-  const availabilityEvent = (eventsRes.data.items ?? []).find(event => {
-    const summary = event.summary?.toLowerCase() ?? ''
-    const isAvailability = summary.includes('slot') || summary.includes('disponível')
-    const eventStartRaw = event.start?.dateTime
-    if (!isAvailability || !eventStartRaw) return false
-    return new Date(eventStartRaw).toISOString() === targetStartIso
-  })
+    console.log('[calendar/confirm] start', {
+      ...logMeta,
+      target_start_iso: start.toISOString(),
+      day_start: dayStart,
+      day_end: dayEnd,
+    })
 
-  const availabilityDescription = [
-    'Reserva confirmada via Studio II Booking',
-    `Cliente: ${params.cliente_nome}`,
-    `Maquiadora: ${hasMakeup ? 'Sim' : 'Não'}`,
-    `Figurinista: ${hasStylist ? 'Sim' : 'Não'}`,
-  ].join('\n')
-
-  if (availabilityEvent?.id) {
-    await calendar.events.patch({
+    const eventsRes = await calendar.events.list({
       calendarId,
-      eventId: availabilityEvent.id,
+      timeMin: dayStart,
+      timeMax: dayEnd,
+      singleEvents: true,
+      orderBy: 'startTime',
+    })
+
+    const targetStartIso = start.toISOString()
+    const events = eventsRes.data.items ?? []
+    const availabilityEvent = events.find(event => {
+      const summary = event.summary?.toLowerCase() ?? ''
+      const isAvailability = summary.includes('slot') || summary.includes('disponível')
+      const eventStartRaw = event.start?.dateTime
+      if (!isAvailability || !eventStartRaw) return false
+      return new Date(eventStartRaw).toISOString() === targetStartIso
+    })
+
+    console.log('[calendar/confirm] availability lookup', {
+      ...logMeta,
+      events_in_day: events.length,
+      matched_event_id: availabilityEvent?.id ?? '',
+      matched_event_summary: availabilityEvent?.summary ?? '',
+    })
+
+    const availabilityDescription = [
+      'Reserva confirmada via Studio II Booking',
+      `Cliente: ${params.cliente_nome}`,
+      `Maquiadora: ${hasMakeup ? 'Sim' : 'Não'}`,
+      `Figurinista: ${hasStylist ? 'Sim' : 'Não'}`,
+    ].join('\n')
+
+    if (availabilityEvent?.id) {
+      await calendar.events.patch({
+        calendarId,
+        eventId: availabilityEvent.id,
+        sendUpdates: 'all',
+        requestBody: {
+          summary: `Reservado · ${params.cliente_nome}`,
+          description: availabilityDescription,
+          start: { dateTime: start.toISOString(), timeZone: TZ },
+          end: { dateTime: end.toISOString(), timeZone: TZ },
+          colorId: '11',
+          attendees,
+        },
+      })
+      console.log('[calendar/confirm] patch success', {
+        ...logMeta,
+        event_id: availabilityEvent.id,
+      })
+      return
+    }
+
+    const insertRes = await calendar.events.insert({
+      calendarId,
       sendUpdates: 'all',
       requestBody: {
-        summary: `Reservado · ${params.cliente_nome}`,
+        summary: `📸 Sessão: ${params.cliente_nome}${addonsLabel}`,
         description: availabilityDescription,
         start: { dateTime: start.toISOString(), timeZone: TZ },
         end: { dateTime: end.toISOString(), timeZone: TZ },
-        colorId: '11',
+        colorId: '2', // sage green
         attendees,
       },
     })
-    return
-  }
 
-  await calendar.events.insert({
-    calendarId,
-    sendUpdates: 'all',
-    requestBody: {
-      summary: `📸 Sessão: ${params.cliente_nome}${addonsLabel}`,
-      description: availabilityDescription,
-      start: { dateTime: start.toISOString(), timeZone: TZ },
-      end: { dateTime: end.toISOString(), timeZone: TZ },
-      colorId: '2', // sage green
-      attendees,
-    },
-  })
+    console.log('[calendar/confirm] insert success (fallback)', {
+      ...logMeta,
+      event_id: insertRes.data.id ?? '',
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[calendar/confirm] failed', {
+      ...logMeta,
+      error: message,
+    })
+    throw err
+  }
 }

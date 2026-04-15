@@ -48,6 +48,40 @@ export async function POST(req: NextRequest) {
     // Check if already confirmed (idempotent)
     const existing = await getReservationById(reservation_id)
     if (existing?.reservation.status === 'CONFIRMADO') {
+      const confirmed = existing.reservation
+      console.log('[webhook/pagbank] already confirmed; reconciling side effects:', reservation_id)
+
+      const [calendarResult, emailResult] = await Promise.allSettled([
+        createConfirmedCalendarEvent({
+          reservation_id: confirmed.id,
+          source: 'webhook-reconcile',
+          slot_datetime: confirmed.slot_datetime,
+          cliente_nome: confirmed.cliente_nome,
+          cliente_email: confirmed.cliente_email,
+          addons: JSON.parse(confirmed.addons || '[]'),
+        }),
+        sendConfirmationEmail(confirmed),
+      ])
+
+      if (calendarResult.status === 'rejected') {
+        console.error('[webhook/pagbank] calendar reconcile failed', {
+          reservation_id,
+          error:
+            calendarResult.reason instanceof Error
+              ? calendarResult.reason.message
+              : String(calendarResult.reason),
+        })
+      }
+      if (emailResult.status === 'rejected') {
+        console.error('[webhook/pagbank] email reconcile failed', {
+          reservation_id,
+          error:
+            emailResult.reason instanceof Error
+              ? emailResult.reason.message
+              : String(emailResult.reason),
+        })
+      }
+
       return NextResponse.json({ received: true, note: 'already confirmed' })
     }
 
@@ -64,6 +98,8 @@ export async function POST(req: NextRequest) {
 
     await Promise.all([
       createConfirmedCalendarEvent({
+        reservation_id: confirmed.id,
+        source: 'webhook',
         slot_datetime: confirmed.slot_datetime,
         cliente_nome: confirmed.cliente_nome,
         cliente_email: confirmed.cliente_email,

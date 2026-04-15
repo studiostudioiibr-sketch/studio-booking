@@ -622,6 +622,17 @@ export default function CheckoutPage() {
           </div>
 
           <div className="no-print flex flex-col gap-3 max-w-md mx-auto">
+            <a
+              href={whatsappHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full bg-[#25D366] text-white py-4 font-body text-sm font-semibold tracking-widest uppercase hover:bg-[#1FA855] active:scale-[0.99] transition-all text-center shadow-sm"
+            >
+              Confirmar agora no WhatsApp
+            </a>
+            <p className="text-[11px] font-body text-muted text-center -mt-1 mb-1">
+              Envie a mensagem para validarmos os detalhes da sua reserva.
+            </p>
             <button
               type="button"
               onClick={handleCopyVoucher}
@@ -639,14 +650,6 @@ export default function CheckoutPage() {
             >
               Imprimir / salvar PDF
             </button>
-            <a
-              href={whatsappHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full border border-[#25D366]/30 text-[#1F9C4A] bg-[#25D366]/10 py-3.5 font-body text-sm font-medium tracking-widest uppercase hover:bg-[#25D366]/15 transition-all text-center"
-            >
-              Confirmar no WhatsApp
-            </a>
             <a
               href="/"
               className="text-xs font-body tracking-widest uppercase text-muted hover:text-ink transition-colors py-2"

@@ -107,15 +107,36 @@ export async function POST(req: NextRequest) {
 
     if (confirmed) {
       // Fire and forget (don't block response on these)
-      Promise.all([
+      void Promise.allSettled([
         createConfirmedCalendarEvent({
+          reservation_id: confirmed.id,
+          source: 'card',
           slot_datetime: confirmed.slot_datetime,
           cliente_nome: confirmed.cliente_nome,
           cliente_email: confirmed.cliente_email,
           addons: JSON.parse(confirmed.addons || '[]'),
         }),
         sendConfirmationEmail(confirmed),
-      ]).catch(err => console.error('[post-confirm]', err))
+      ]).then(([calendarResult, emailResult]) => {
+        if (calendarResult.status === 'rejected') {
+          console.error('[post-confirm][calendar] failed', {
+            reservation_id: confirmed.id,
+            error:
+              calendarResult.reason instanceof Error
+                ? calendarResult.reason.message
+                : String(calendarResult.reason),
+          })
+        }
+        if (emailResult.status === 'rejected') {
+          console.error('[post-confirm][email] failed', {
+            reservation_id: confirmed.id,
+            error:
+              emailResult.reason instanceof Error
+                ? emailResult.reason.message
+                : String(emailResult.reason),
+          })
+        }
+      })
     }
 
     return NextResponse.json({ status: 'APROVADO', reservation_id })

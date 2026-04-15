@@ -58,6 +58,13 @@ Se o token estiver certo mas a chave pública for de **outra conta**, **outro am
 - `[webhook/pagbank] body` — corpo bruto recebido (quando log detalhado está ativo).
 - `[webhook/pagbank] parsed` — JSON com `order_id`, `reference_id`, `order_status`, resumo de charges (`CHAR_...:PAID`).
 - `[webhook/pagbank] Ignored body` — ver §5.2 (notificação legada); **não** indica falha do fluxo principal.
+- `[calendar/confirm] start` — início da rotina de agenda com `reservation_id`, origem (`card`, `webhook`, `webhook-reconcile`) e janela de busca do dia.
+- `[calendar/confirm] availability lookup` — resultado da busca do slot de disponibilidade (se encontrou `matched_event_id`).
+- `[calendar/confirm] patch success` — slot existente atualizado com sucesso.
+- `[calendar/confirm] insert success (fallback)` — não encontrou slot para patch e criou novo evento.
+- `[calendar/confirm] failed` — falha ao listar/patch/insert na API Google Calendar.
+- `[post-confirm][calendar] failed` / `[post-confirm][email] failed` — falha no pós-confirmação do fluxo cartão.
+- `[webhook/pagbank] calendar reconcile failed` / `email reconcile failed` — falha na reconciliação idempotente quando o webhook chega com reserva já `CONFIRMADO`.
 
 **Quando os logs detalhados ligam:**
 
@@ -149,6 +156,8 @@ Isso serve como evidência de fluxo cartão aprovado em sandbox.
 | Log *Ignored body* com `notificationCode` / `notificationType=transaction` | Comportamento esperado (§5.2); não substitui o webhook JSON do pedido. |
 | `parsed` com `order_status` vazio mas `charges` com `PAID` | Normal no JSON pedido-na-raiz (§5.1). |
 | Último deploy “quebrou” cartão | Mudanças de log não alteram o JSON enviado ao PagBank; suspeitar de **env** alterado na Vercel ou chave rotacionada no painel. |
+| Reserva confirmou mas slot não foi editado | Buscar por `[calendar/confirm] availability lookup`: se `matched_event_id` vazio, caiu no fallback de insert; conferir título do slot (`slot`/`disponível`) e horário exato do evento. |
+| Webhook chegou depois do cartão e nada mudou na agenda | Buscar `[webhook/pagbank] already confirmed; reconciling side effects:` e os logs `[calendar/confirm]` subsequentes da mesma `reservation_id`. |
 
 ---
 
