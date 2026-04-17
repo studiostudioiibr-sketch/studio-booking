@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Este horário não está mais disponível para pagamento (mínimo de 20 minutos de antecedência). Refaça o agendamento.',
+            'Este horário não está disponível para pagamento hoje. Refaça o agendamento para uma data a partir de amanhã.',
         },
         { status: 400 }
       )

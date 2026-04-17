@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Este horário não está mais disponível para reserva (mínimo de 20 minutos de antecedência). Escolha outro.',
+            'Este horário não está disponível para reserva hoje. Escolha uma data a partir de amanhã.',
         },
         { status: 400 }
       )

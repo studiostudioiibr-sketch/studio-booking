@@ -1,6 +1,11 @@
-/** Minimum time between "now" and session start for new bookings (20 minutes). */
-export const BOOKING_MIN_LEAD_MS = 20 * 60 * 1000
+import { format } from 'date-fns'
+import { toZonedTime } from 'date-fns-tz'
+
+/** Only allow bookings for dates from tomorrow onward (São Paulo timezone). */
+const BOOKING_TIMEZONE = 'America/Sao_Paulo'
 
 export function slotMeetsMinimumLeadTime(slotStart: Date, now: Date = new Date()): boolean {
-  return slotStart.getTime() - now.getTime() >= BOOKING_MIN_LEAD_MS
+  const slotDateKey = format(toZonedTime(slotStart, BOOKING_TIMEZONE), 'yyyy-MM-dd')
+  const todayDateKey = format(toZonedTime(now, BOOKING_TIMEZONE), 'yyyy-MM-dd')
+  return slotDateKey > todayDateKey
 }
