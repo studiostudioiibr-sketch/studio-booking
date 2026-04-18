@@ -150,9 +150,31 @@ export default function HomePage() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false)
 
   // Total calculation
   const total = BASE_PRICE + addons.reduce((s, k) => s + ADDONS[k].price_cents, 0)
+
+  useEffect(() => {
+    if (!isTermsModalOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsTermsModalOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isTermsModalOpen])
 
   // Load slots when date changes
   useEffect(() => {
@@ -280,6 +302,10 @@ export default function HomePage() {
 
   const handleSubmit = async () => {
     if (!selectedSlot) return
+    if (!acceptedTerms) {
+      setSubmitError('Você precisa aceitar o termo de cancelamento para continuar.')
+      return
+    }
     setSubmitting(true)
     setSubmitError('')
 
@@ -603,9 +629,31 @@ export default function HomePage() {
               </p>
             )}
 
+            <div className="mb-4">
+              <label className="flex items-start gap-3 text-xs font-body text-muted leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={e => setAcceptedTerms(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Li e aceito o{' '}
+                  <button
+                    type="button"
+                    onClick={() => setIsTermsModalOpen(true)}
+                    className="underline text-ink hover:text-accent transition-colors"
+                  >
+                    Termo de Cancelamento e Politica de Reembolso
+                  </button>
+                  .
+                </span>
+              </label>
+            </div>
+
             <button
               onClick={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || !acceptedTerms}
               className="w-full bg-ink text-paper py-4 font-body text-sm font-medium tracking-widest uppercase hover:bg-ink/90 active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Criando reserva...' : `Garantir horário · ${formatCurrency(total)}`}
@@ -639,6 +687,73 @@ export default function HomePage() {
           </p>
         </section>
       </main>
+
+      {isTermsModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center px-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) {
+              setIsTermsModalOpen(false)
+            }
+          }}
+        >
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-hidden bg-paper border border-ink/10 shadow-xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-ink/10">
+              <h3 className="font-body text-xs tracking-widest uppercase text-muted">
+                Termo de Cancelamento e Politica de Reembolso
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsTermsModalOpen(false)}
+                className="text-sm text-muted hover:text-ink"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="px-5 py-4 overflow-y-auto max-h-[65vh] space-y-4 text-sm font-body text-ink/90 leading-relaxed">
+              <p><strong>1. DO CANCELAMENTO POR INICIATIVA DO CONTRATANTE</strong></p>
+              <p>
+                O pedido de cancelamento do servico agendado deve ser comunicado formalmente a administracao do Studio II.
+              </p>
+              <p>
+                Cancelamento com antecedencia minima de 48 horas: restituicao de 50% do valor total do servico contratado.
+              </p>
+              <p>
+                Cancelamento com menos de 48 horas do horario agendado: nao ha direito a restituicao de valores.
+              </p>
+
+              <p><strong>2. DAS TAXAS OPERACIONAIS E CARTAO</strong></p>
+              <p>
+                Em pagamentos via cartao de credito ou debito, as taxas da operadora (2% a 5%) sao deduzidas do valor a ser reembolsado.
+              </p>
+
+              <p><strong>3. DO CANCELAMENTO POR INICIATIVA DO ESTUDIO</strong></p>
+              <p>
+                O Studio II pode cancelar o agendamento com aviso previo de ate 24 horas.
+              </p>
+              <p>
+                Nesse caso, o contratante recebe reembolso integral dos valores pagos ou pode optar por reagendamento conforme disponibilidade.
+              </p>
+
+              <p><strong>4. DA CONFIRMACAO DE RESERVA</strong></p>
+              <p>
+                A vaga e bloqueada automaticamente mediante confirmacao do pagamento e aceite deste termo.
+              </p>
+            </div>
+
+            <div className="px-5 py-4 border-t border-ink/10 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsTermsModalOpen(false)}
+                className="bg-ink text-paper px-5 py-2 text-xs tracking-widest uppercase"
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
