@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { Reservation } from './types'
+import { formatAddonLabels, Reservation } from './types'
 import { format, parseISO } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toZonedTime } from 'date-fns-tz'
@@ -40,9 +40,10 @@ export async function sendConfirmationEmail(reservation: Reservation): Promise<v
     const addons: string[] = JSON.parse(reservation.addons || '[]')
     const slotLabel = formatSlotDate(reservation.slot_datetime)
 
-    const addonLines = addons.length > 0
-      ? `<p style="margin:0 0 8px"><strong>Adicionais:</strong> ${addons.join(', ')}</p>`
-      : ''
+    const addonLines =
+      addons.length > 0
+        ? `<p style="margin:0 0 8px"><strong>Adicionais:</strong> ${formatAddonLabels(addons)}</p>`
+        : ''
 
     const hasArriveEarly = addons.includes('makeup')
     const earlyNote = hasArriveEarly

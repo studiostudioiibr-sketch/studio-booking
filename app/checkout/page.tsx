@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { digitsOnlyTaxId, isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
+import { formatAddonLabels } from '@/lib/types'
 
 type PagSeguroEncryptResult = {
   encryptedCard: string
@@ -50,11 +51,6 @@ interface BookingSession {
   addons: string[]
 }
 
-const ADDON_LABELS: Record<string, string> = {
-  makeup: 'Maquiador',
-  stylist: 'Figurinista',
-}
-
 const DEFAULT_STUDIO_WHATSAPP_NUMBER = '5521959023665'
 
 function normalizeWhatsAppNumber(value: string | undefined): string {
@@ -73,9 +69,7 @@ function resolveStudioWhatsAppNumber(): string {
 
 function buildVoucherText(b: BookingSession): string {
   const addonLine =
-    b.addons?.length > 0
-      ? b.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')
-      : 'Nenhum'
+    b.addons?.length > 0 ? formatAddonLabels(b.addons) : 'Nenhum'
   return [
     'Studio II — Comprovante de reserva',
     `ID: ${b.reservation_id}`,
@@ -93,9 +87,7 @@ function buildVoucherText(b: BookingSession): string {
 
 function buildWhatsAppConfirmationText(b: BookingSession): string {
   const addonLine =
-    b.addons?.length > 0
-      ? b.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')
-      : 'Nenhum'
+    b.addons?.length > 0 ? formatAddonLabels(b.addons) : 'Nenhum'
   return [
     'Olá! Acabei de finalizar minha reserva no Studio II.',
     '',
@@ -606,7 +598,7 @@ export default function CheckoutPage() {
               {booking.addons?.length > 0 && (
                 <div>
                   <dt className="text-[10px] uppercase tracking-widest text-muted">Adicionais</dt>
-                  <dd>{booking.addons.map(k => ADDON_LABELS[k] ?? k).join(', ')}</dd>
+                  <dd>{formatAddonLabels(booking.addons)}</dd>
                 </div>
               )}
               {booking.addons?.includes('makeup') && (
@@ -722,7 +714,7 @@ export default function CheckoutPage() {
               <p className="text-xs font-body text-muted">Rua Miranda Valverde, 123 — Botafogo, Rio de Janeiro</p>
               {booking.addons?.length > 0 && (
                 <p className="text-xs font-body text-accent mt-1">
-                  + {booking.addons.join(', ')}
+                  + {formatAddonLabels(booking.addons)}
                 </p>
               )}
             </div>

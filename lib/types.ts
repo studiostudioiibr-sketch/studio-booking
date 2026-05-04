@@ -10,7 +10,7 @@ export interface Reservation {
   cliente_nome: string
   cliente_email: string
   cliente_telefone: string
-  addons: string               // JSON string: ["makeup","stylist"]
+  addons: string               // JSON string: ["makeup"] (legado: stylist)
   total_cents: number
   gateway: 'pagbank' | ''
   gateway_tx_id: string        // ID da transação no gateway
@@ -36,7 +36,7 @@ export interface CreateBookingRequest {
   cliente_nome: string
   cliente_email: string
   cliente_telefone: string
-  addons: ('makeup' | 'stylist')[]
+  addons: AddonKey[]
 }
 
 export interface CreateBookingResponse {
@@ -75,11 +75,16 @@ export const ADDONS = {
     price_cents: Number(process.env.ADDON_MAKEUP_CENTS ?? 16000),
     note: 'Chegar com 30 min de antecedência',
   },
-  stylist: {
-    label: 'Figurinista',
-    price_cents: Number(process.env.ADDON_STYLIST_CENTS ?? 30000),
-    note: null,
-  },
 } as const
 
 export type AddonKey = keyof typeof ADDONS
+
+/** Rótulos para exibição (e-mail, checkout, calendário), inclui chaves legadas já gravadas na planilha. */
+export const ADDON_LABELS_LEGACY: Record<string, string> = {
+  makeup: 'Maquiador',
+  stylist: 'Figurinista',
+}
+
+export function formatAddonLabels(addonKeys: string[]): string {
+  return addonKeys.map(k => ADDON_LABELS_LEGACY[k] ?? k).join(', ')
+}

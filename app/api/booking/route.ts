@@ -4,12 +4,24 @@ import { createHoldReservation } from '@/lib/google-sheets'
 import { ADDONS, AddonKey } from '@/lib/types'
 import { z } from 'zod'
 
+/** Aceita chaves legadas (ex.: stylist) e normaliza para add-ons ainda cobráveis. */
+const addonsField = z
+  .array(z.enum(['makeup', 'stylist']))
+  .default([])
+  .transform((arr): AddonKey[] => {
+    const unique = Array.from(new Set(arr))
+    if (process.env.NODE_ENV === 'development' && unique.some(k => !(k in ADDONS))) {
+      console.warn('[POST /api/booking] removed deprecated or unknown addons from request:', unique)
+    }
+    return unique.filter((k): k is AddonKey => k in ADDONS)
+  })
+
 const schema = z.object({
   slot_datetime: z.string().min(1),
   cliente_nome: z.string().min(2),
   cliente_email: z.string().email(),
   cliente_telefone: z.string().min(8),
-  addons: z.array(z.enum(['makeup', 'stylist'])).default([]),
+  addons: addonsField,
 })
 
 export async function POST(req: NextRequest) {
@@ -42,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     // Calculate total
     const basePrice = Number(process.env.BASE_PRICE_CENTS ?? 20000)
-    const addonsTotal = addons.reduce((sum, key) => sum + ADDONS[key as AddonKey].price_cents, 0)
+    const addonsTotal = addons.reduce((sum, key) => sum + ADDONS[key].price_cents, 0)
     const total_cents = basePrice + addonsTotal
 
     // Create HOLD (includes optimistic lock check)

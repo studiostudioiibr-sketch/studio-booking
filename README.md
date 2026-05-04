@@ -93,7 +93,7 @@ cp .env.example .env.local
 10. Após pagamento confirmado, o app tenta localizar o evento de disponibilidade
    no mesmo dia/horário (comparação por instante UTC) e aplica patch:
    - título: `Reservado · Nome do Cliente`
-   - descrição: cliente + `Maquiadora: Sim/Não` + `Figurinista: Sim/Não`
+   - descrição: cliente + `Maquiadora: Sim/Não`
    - attendees (opcional): studio + cliente, quando `GOOGLE_CALENDAR_ALLOW_ATTENDEES=true`
 11. Sem evento de disponibilidade em um dia, esse dia ficará sem horários no site
     (não existe fallback automático de horários fixos).
@@ -157,7 +157,6 @@ NEXT_PUBLIC_STUDIO_WHATSAPP_NUMBER=5521959023665
 HOLD_TIMEOUT_MINUTES=15
 BASE_PRICE_CENTS=20000
 ADDON_MAKEUP_CENTS=16000
-ADDON_STYLIST_CENTS=30000
 SETUP_TOKEN=qualquer-string-secreta
 NEXT_PUBLIC_BASE_PRICE_CENTS=20000
 NEXT_PUBLIC_HOLD_TIMEOUT_MINUTES=15
@@ -255,7 +254,7 @@ studio-booking/
    no mesmo dia/horário da reserva (match por instante UTC, timezone-safe).
 4. Se encontrar, aplica patch no evento:
    - `Reservado · Nome do Cliente`
-   - informações de maquiagem/figurinista em `Sim/Não`
+   - informação de maquiagem em `Sim/Não`
    - attendees com studio + cliente (somente se `GOOGLE_CALENDAR_ALLOW_ATTENDEES=true`).
 5. Se não encontrar evento compatível, cria evento de sessão confirmada
    como fallback operacional.

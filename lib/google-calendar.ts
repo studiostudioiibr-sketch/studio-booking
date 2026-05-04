@@ -1,5 +1,5 @@
 import { google } from 'googleapis'
-import { MonthAvailabilityByDate, Slot } from './types'
+import { formatAddonLabels, MonthAvailabilityByDate, Slot } from './types'
 import { slotMeetsMinimumLeadTime } from './booking-lead-time'
 import { getReservationsByDate, getReservationsByMonth } from './google-sheets'
 import { format, parseISO } from 'date-fns'
@@ -176,11 +176,9 @@ export async function createConfirmedCalendarEvent(params: {
     const start = new Date(params.slot_datetime)
     const end = new Date(start.getTime() + 60 * 60 * 1000) // 1 hour session
 
-    const addonsLabel = params.addons.length > 0
-      ? ` + ${params.addons.join(', ')}`
-      : ''
+    const addonsLabel =
+      params.addons.length > 0 ? ` + ${formatAddonLabels(params.addons)}` : ''
     const hasMakeup = params.addons.includes('makeup')
-    const hasStylist = params.addons.includes('stylist')
     const studioEmail = process.env.STUDIO_NOTIFICATION_EMAIL?.trim() ?? ''
     const attendeeEmails = Array.from(new Set([studioEmail, params.cliente_email.trim()]))
       .map(e => e.trim())
@@ -234,7 +232,6 @@ export async function createConfirmedCalendarEvent(params: {
       'Reserva confirmada via Studio II Booking',
       `Cliente: ${params.cliente_nome}`,
       `Maquiadora: ${hasMakeup ? 'Sim' : 'Não'}`,
-      `Figurinista: ${hasStylist ? 'Sim' : 'Não'}`,
     ].join('\n')
 
     if (availabilityEvent?.id) {
