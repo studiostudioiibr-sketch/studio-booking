@@ -619,7 +619,7 @@ export default function HomePage() {
               </p>
               <p className="text-xs text-muted/80 font-body pt-3 leading-relaxed border-t border-ink/10 mt-3">
                 O valor acima é da reserva da sessão. Depois dos cliques você escolhe quantas fotos quer
-                levar — cada uma a partir R$ 80, podendo negociar direto no estúdio.
+                levar — cada uma a partir de R$ 80.
               </p>
             </div>
 
@@ -673,7 +673,7 @@ export default function HomePage() {
               '1 hora de sessão de cliques',
               'Direção e acompanhamento durante os cliques',
               'Após a sessão você escolhe quantas fotos deseja (editadas em alta resolução)',
-              'Cada foto a partir de R$ 80 — valores podem ser negociados presencialmente no estúdio',
+              'Cada foto a partir de R$ 80',
             ].map(item => (
               <li key={item} className="flex items-center gap-3">
                 <span className="text-accent text-xs">—</span>
