@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { format, addDays, startOfToday, isBefore, startOfDay } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
+import { trackMetaEvent } from '@/lib/meta/browser'
+import { buildMetaEventId } from '@/lib/meta/event-id'
 import { Slot, AddonKey, ADDONS } from '@/lib/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -340,6 +342,19 @@ export default function HomePage() {
         cliente_cpf: form.cpf.replace(/\D/g, ''),
         addons,
       }))
+
+      trackMetaEvent({
+        eventName: 'InitiateCheckout',
+        reservationId: data.reservation_id,
+        eventId: buildMetaEventId('InitiateCheckout', data.reservation_id),
+        parameters: {
+          value: Number((data.total_cents / 100).toFixed(2)),
+          currency: 'BRL',
+          content_name: 'Studio II Session',
+          content_type: 'product',
+          num_items: 1,
+        },
+      })
 
       router.push('/checkout')
     } catch {

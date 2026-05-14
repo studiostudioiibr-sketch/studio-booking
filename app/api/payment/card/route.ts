@@ -6,6 +6,7 @@ import { sendConfirmationEmail } from '@/lib/email'
 import { slotMeetsMinimumLeadTime } from '@/lib/booking-lead-time'
 import { publicErrorMessage } from '@/lib/api-error-message'
 import { isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
+import { sendMetaPurchaseEvent } from '@/lib/meta/capi'
 import { z } from 'zod'
 
 const taxIdSchema = z
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (confirmed) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
       // Fire and forget (don't block response on these)
       void Promise.allSettled([
         createConfirmedCalendarEvent({
@@ -119,7 +121,18 @@ export async function POST(req: NextRequest) {
           addons: JSON.parse(confirmed.addons || '[]'),
         }),
         sendConfirmationEmail(confirmed),
-      ]).then(([calendarResult, emailResult]) => {
+        sendMetaPurchaseEvent({
+          reservationId: confirmed.id,
+          totalCents: confirmed.total_cents,
+          source: 'card',
+          eventSourceUrl: appUrl ? `${appUrl}/checkout` : undefined,
+          email: confirmed.cliente_email,
+          phone: confirmed.cliente_telefone,
+          taxId: tax_id,
+          clientIpAddress: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined,
+          clientUserAgent: req.headers.get('user-agent') ?? undefined,
+        }),
+      ]).then(([calendarResult, emailResult, metaResult]) => {
         if (calendarResult.status === 'rejected') {
           console.error('[post-confirm][calendar] failed', {
             reservation_id: confirmed.id,
@@ -136,6 +149,21 @@ export async function POST(req: NextRequest) {
               emailResult.reason instanceof Error
                 ? emailResult.reason.message
                 : String(emailResult.reason),
+          })
+        }
+        if (metaResult.status === 'rejected') {
+          console.error('[post-confirm][meta-capi] failed', {
+            reservation_id: confirmed.id,
+            error:
+              metaResult.reason instanceof Error
+                ? metaResult.reason.message
+                : String(metaResult.reason),
+          })
+        } else if (!metaResult.value.ok) {
+          console.error('[post-confirm][meta-capi] request rejected', {
+            reservation_id: confirmed.id,
+            status_code: metaResult.value.statusCode,
+            error: metaResult.value.error,
           })
         }
       })

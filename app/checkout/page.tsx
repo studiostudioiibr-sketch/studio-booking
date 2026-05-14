@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { digitsOnlyTaxId, isValidBrazilTaxIdDigits } from '@/lib/brazilian-tax-id'
+import { trackMetaEvent } from '@/lib/meta/browser'
+import { buildMetaEventId } from '@/lib/meta/event-id'
 import { formatAddonLabels } from '@/lib/types'
 
 type PagSeguroEncryptResult = {
@@ -131,10 +133,12 @@ function PixPanel({
   reservationId,
   totalCents,
   payerTaxRaw,
+  onPaymentReady,
 }: {
   reservationId: string
   totalCents: number
   payerTaxRaw: string
+  onPaymentReady: () => void
 }) {
   const [loading, setLoading] = useState(true)
   const [pix, setPix] = useState<{ qr_code_text: string; qr_code_image_url: string } | null>(null)
@@ -163,10 +167,11 @@ function PixPanel({
       .then(data => {
         if (data.error) throw new Error(data.error)
         setPix(data)
+        onPaymentReady()
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [reservationId, taxDigits, taxOk])
+  }, [onPaymentReady, reservationId, taxDigits, taxOk])
 
   const copy = useCallback(async () => {
     if (!pix?.qr_code_text) return
@@ -239,11 +244,13 @@ function CardPanel({
   reservationId,
   totalCents,
   payerTaxRaw,
+  onPaymentAttempt,
   onSuccess,
 }: {
   reservationId: string
   totalCents: number
   payerTaxRaw: string
+  onPaymentAttempt: () => void
   onSuccess: () => void
 }) {
   const [card, setCard] = useState({
@@ -340,6 +347,7 @@ function CardPanel({
     }
 
     try {
+      onPaymentAttempt()
       const res = await fetch('/api/payment/card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -493,6 +501,7 @@ export default function CheckoutPage() {
   const [gateway, setGateway] = useState<'pix' | 'card'>('pix')
   const [confirmed, setConfirmed] = useState(false)
   const [voucherCopied, setVoucherCopied] = useState(false)
+  const purchaseTrackedRef = useRef<string | null>(null)
 
   const secondsLeft = useCountdown(booking?.expires_at ?? null)
   const isExpired = secondsLeft === 0 && booking !== null
@@ -522,6 +531,31 @@ export default function CheckoutPage() {
     sessionStorage.setItem('booking', JSON.stringify(next))
   }, [booking, payerDocument])
 
+  const trackAddPaymentInfo = useCallback((paymentType: 'pix' | 'card') => {
+    if (!booking) return
+
+    trackMetaEvent({
+      eventName: 'AddPaymentInfo',
+      reservationId: booking.reservation_id,
+      eventId: buildMetaEventId('AddPaymentInfo', booking.reservation_id),
+      parameters: {
+        content_name: 'Studio II Session',
+        content_type: 'product',
+        currency: 'BRL',
+        value: Number((booking.total_cents / 100).toFixed(2)),
+        payment_type: paymentType,
+      },
+    })
+  }, [booking])
+
+  const handlePixPaymentReady = useCallback(() => {
+    trackAddPaymentInfo('pix')
+  }, [trackAddPaymentInfo])
+
+  const handleCardPaymentAttempt = useCallback(() => {
+    trackAddPaymentInfo('card')
+  }, [trackAddPaymentInfo])
+
   // Poll for PIX confirmation
   useEffect(() => {
     if (gateway !== 'pix' || !booking || confirmed) return
@@ -541,6 +575,25 @@ export default function CheckoutPage() {
 
     return () => clearInterval(interval)
   }, [gateway, booking, confirmed])
+
+  useEffect(() => {
+    if (!booking || !confirmed) return
+    if (purchaseTrackedRef.current === booking.reservation_id) return
+
+    trackMetaEvent({
+      eventName: 'Purchase',
+      reservationId: booking.reservation_id,
+      eventId: buildMetaEventId('Purchase', booking.reservation_id),
+      parameters: {
+        value: Number((booking.total_cents / 100).toFixed(2)),
+        currency: 'BRL',
+        content_name: 'Studio II Session',
+        content_type: 'product',
+        order_id: booking.reservation_id,
+      },
+    })
+    purchaseTrackedRef.current = booking.reservation_id
+  }, [booking, confirmed])
 
   if (!booking) return null
 
@@ -780,12 +833,14 @@ export default function CheckoutPage() {
               reservationId={booking.reservation_id}
               totalCents={booking.total_cents}
               payerTaxRaw={payerDocument}
+              onPaymentReady={handlePixPaymentReady}
             />
           ) : (
             <CardPanel
               reservationId={booking.reservation_id}
               totalCents={booking.total_cents}
               payerTaxRaw={payerDocument}
+              onPaymentAttempt={handleCardPaymentAttempt}
               onSuccess={() => setConfirmed(true)}
             />
           )}

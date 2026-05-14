@@ -8,6 +8,7 @@ import {
 import { confirmReservation, getReservationById } from '@/lib/google-sheets'
 import { createConfirmedCalendarEvent } from '@/lib/google-calendar'
 import { sendConfirmationEmail } from '@/lib/email'
+import { sendMetaPurchaseEvent } from '@/lib/meta/capi'
 
 export async function POST(req: NextRequest) {
   let reservation_id = ''
@@ -97,7 +98,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 
-    await Promise.all([
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '')
+
+    const [calendarResult, emailResult, metaResult] = await Promise.allSettled([
       createConfirmedCalendarEvent({
         reservation_id: confirmed.id,
         source: 'webhook',
@@ -107,7 +110,53 @@ export async function POST(req: NextRequest) {
         addons: JSON.parse(confirmed.addons || '[]'),
       }),
       sendConfirmationEmail(confirmed),
+      sendMetaPurchaseEvent({
+        reservationId: confirmed.id,
+        totalCents: confirmed.total_cents,
+        source: 'pix-webhook',
+        eventSourceUrl: appUrl ? `${appUrl}/checkout` : undefined,
+        email: confirmed.cliente_email,
+        phone: confirmed.cliente_telefone,
+        clientIpAddress: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? undefined,
+        clientUserAgent: req.headers.get('user-agent') ?? undefined,
+      }),
     ])
+
+    if (calendarResult.status === 'rejected') {
+      console.error('[webhook/pagbank] calendar failed', {
+        reservation_id,
+        error:
+          calendarResult.reason instanceof Error
+            ? calendarResult.reason.message
+            : String(calendarResult.reason),
+      })
+    }
+
+    if (emailResult.status === 'rejected') {
+      console.error('[webhook/pagbank] email failed', {
+        reservation_id,
+        error:
+          emailResult.reason instanceof Error
+            ? emailResult.reason.message
+            : String(emailResult.reason),
+      })
+    }
+
+    if (metaResult.status === 'rejected') {
+      console.error('[webhook/pagbank] meta-capi failed', {
+        reservation_id,
+        error:
+          metaResult.reason instanceof Error
+            ? metaResult.reason.message
+            : String(metaResult.reason),
+      })
+    } else if (!metaResult.value.ok) {
+      console.error('[webhook/pagbank] meta-capi request rejected', {
+        reservation_id,
+        status_code: metaResult.value.statusCode,
+        error: metaResult.value.error,
+      })
+    }
 
     console.log('[webhook/pagbank] Confirmed:', reservation_id)
     return NextResponse.json({ received: true })
